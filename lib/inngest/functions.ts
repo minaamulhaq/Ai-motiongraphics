@@ -213,7 +213,10 @@ export const generateMotion = inngest.createFunction({
       console.warn("AI storyboard unavailable; using a clean visual fallback.",error instanceof Error?error.message:"Unknown provider error");
       parsed=fallbackBrief(project.prompt,durationInFrames);
     }
-    const result=restrictHeadlinesToQuotedCopy(normalizeSceneTimings(parsed,durationInFrames),project.prompt);
+    const timed=normalizeSceneTimings(parsed,durationInFrames);
+    const result=requestsTextFreeVideo(project.prompt)
+      ? {...timed,scenes:timed.scenes.map(scene=>({...scene,headline:""}))}
+      : timed;
     await update("generating_prompt",30,{brief:result});
     return result;
   });
@@ -241,10 +244,10 @@ export const generateMotion = inngest.createFunction({
     try{
       return await generateText(
         remotionCompositionSystemPrompt(skill),
-        JSON.stringify({brief,theme,width,height,fps,durationInFrames}));
+        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames}));
     }catch(error){
-      console.warn("AI composition draft unavailable; using the scene-driven Remotion fallback.",error instanceof Error?error.message:"Unknown provider error");
-      return buildSafeComposition({brief,theme,width,height,fps,durationInFrames});
+      console.error("AI composition draft unavailable",error);
+      throw error;
     }
   });
   await step.run("validate-and-save",async()=>{
@@ -253,8 +256,10 @@ export const generateMotion = inngest.createFunction({
     let problems=validateComposition(validatedCode);
     if(problems.length){
       console.warn("Generated composition requires repair:",problems);
-      validatedCode=buildSearchFeatureComposition({brief,theme,width,height,fps,durationInFrames})
-        ||buildSafeComposition({brief,theme,width,height,fps,durationInFrames});
+      validatedCode=await generateText(
+        remotionCompositionSystemPrompt(await loadRemotionCompositionSkill()),
+        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
+          previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
       problems=validateComposition(validatedCode);
     }
     if(problems.length)throw new Error("Composition type validation failed: "+problems.join("; "));
