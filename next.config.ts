@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
       // Remotion's bundler resolves Mediabunny's conditional package exports
       // while packaging a render. Include the complete dist targets in Vercel.
       "./node_modules/mediabunny/**/*",
+      // The dynamic Remotion webpack bundle resolves package subpath exports
+      // (including effects/brightness/preview) that static tracing misses.
+      "./node_modules/@remotion/**/*",
       "./node_modules/@remotion/studio/**/*",
       "./node_modules/@remotion/studio-shared/**/*",
       "./node_modules/@remotion/studio-protocol/**/*",
