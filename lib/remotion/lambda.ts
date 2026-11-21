@@ -2,7 +2,7 @@ import "server-only";
 import { bundle } from "@remotion/bundler";
 import { deleteSite } from "@remotion/lambda";
 import { getRenderProgress, presignUrl, renderMediaOnLambdaAndStream } from "@remotion/lambda/client";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { deploySiteFromBundle } from "@remotion/lambda";
@@ -46,8 +46,11 @@ export function readCompositionConfig(source: string) {
 function logBundlerResolutionDiagnostics(entryPoint: string) {
   const localRequire = createRequire(join(process.cwd(), "package.json"));
   const effectsManifestPath = join(process.cwd(), "node_modules/@remotion/effects/package.json");
+  const packageLockPath = join(process.cwd(),"package-lock.json");
   let effectsManifest: {version?:string;exports?:Record<string,unknown>} | null = null;
+  let lockInfo: {lockfileVersion?:number;packages?:Record<string,{version?:string}>} | null = null;
   try { effectsManifest = JSON.parse(readFileSync(effectsManifestPath,"utf8")); } catch {}
+  try { lockInfo = JSON.parse(readFileSync(packageLockPath,"utf8")); } catch {}
   let effectsManifestResolved: string | null = null;
   let effectsSubpathResolved: string | null = null;
   let remotionEntryResolved: string | null = null;
@@ -66,6 +69,11 @@ function logBundlerResolutionDiagnostics(entryPoint: string) {
     vercelEnvironment:process.env.VERCEL_ENV??null,entryPoint,remotionBundlerEntry:remotionEntryResolved,
     effectsManifestPath,effectsManifestResolved,packageJsonResolveError,
     effectsVersion:effectsManifest?.version??null,
+    lockfileVersion:lockInfo?.lockfileVersion??null,
+    packageLockSha256:existsSync(packageLockPath)?createHash("sha256").update(readFileSync(packageLockPath)).digest("hex"):null,
+    lockedRemotionVersions:Object.fromEntries(["remotion","@remotion/effects","@remotion/bundler","@remotion/lambda","@remotion/studio"].map((name)=>[
+      name,lockInfo?.packages?.[`node_modules/${name}`]?.version??null,
+    ])),
     brightnessPreviewExport:wildcardExport??null,targetRelative,targetAbsolute,
     targetExists:targetAbsolute?existsSync(targetAbsolute):false,effectsSubpathResolved,
   });
