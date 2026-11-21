@@ -14,12 +14,14 @@ export const briefSchema=z.object({
 export async function generateText(system:string,prompt:string,json=false) {
   const router=process.env.OPENROUTER_API_KEY, openai=process.env.OPENAI_API_KEY;
   if(!router&&!openai)throw new Error("Configure OPENROUTER_API_KEY or OPENAI_API_KEY.");
-  const routerModel=process.env.OPENROUTER_MODEL||"baidu/ernie-5.5-flash-preview:free";
+  // The free preview model frequently truncates full Remotion TSX compositions.
+  // Use a paid model with a larger output budget unless explicitly overridden.
+  const routerModel=process.env.OPENROUTER_MODEL||"openai/gpt-4.1";
   const model=router?routerModel:(process.env.OPENAI_MODEL||"gpt-4.1");
   for(let attempt=0;attempt<2;attempt++){
   const response=await fetch(router?"https://openrouter.ai/api/v1/chat/completions":"https://api.openai.com/v1/chat/completions",{
     method:"POST",headers:{"Authorization":"Bearer "+(router||openai),"Content-Type":"application/json"},
-    body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:prompt}],max_tokens:json?7000:12000,...(json?{response_format:{type:"json_object"}}:{})}),
+    body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:prompt}],max_tokens:json?7000:24000,...(json?{response_format:{type:"json_object"}}:{})}),
     signal:AbortSignal.timeout(240000)
   });
   if(response.status===402)throw new NonRetriableError("OpenRouter credits or key spending limit cannot cover this request.");
