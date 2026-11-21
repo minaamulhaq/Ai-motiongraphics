@@ -1,8 +1,8 @@
 export const generationStages = [
   {status:"queued",label:"Credits reserved · Queued"},
   {status:"loading_project",label:"Loading project"},
-  {status:"generating_prompt",label:"Planning the motion"},
-  {status:"generating_theme",label:"Creating the theme"},
+  {status:"generating_theme",label:"Setting the visual theme"},
+  {status:"generating_prompt",label:"Refining your video prompt"},
   {status:"generating_composition",label:"Writing the Remotion composition"},
   {status:"validating",label:"Validating the composition"},
 ] as const;

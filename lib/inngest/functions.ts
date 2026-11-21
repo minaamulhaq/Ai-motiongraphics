@@ -2,177 +2,20 @@ import { validateComposition } from "@/lib/ai/validate-composition";
 import { generateStructured } from "@/lib/ai/structured";
 import { inngest } from "./client";
 import { workerDatabase } from "@/lib/supabase/worker";
-import { briefSchema, themeSchema, generateText } from "@/lib/ai/generate";
-import { loadRemotionCompositionSkill, remotionCompositionSystemPrompt, storyboardSystemPrompt } from "@/lib/remotion/skill";
+import { themeSchema, generateText } from "@/lib/ai/generate";
+import { loadRemotionCompositionSkill, remotionCompositionSystemPrompt, videoPromptRefinementSystemPrompt } from "@/lib/remotion/skill";
 import { renderProjectOnLambda } from "@/lib/remotion/lambda";
 import { resolveMotionTheme } from "@/lib/motion-theme";
 import { NonRetriableError } from "inngest";
 import { generationIdentity } from "./job-identity";
 
-function normalizeSceneTimings(brief:ReturnType<typeof briefSchema.parse>,durationInFrames:number){
-  const alreadyValid=brief.scenes[0].startFrame===0
-    && brief.scenes.at(-1)?.endFrame===durationInFrames
-    && brief.scenes.every((scene,index)=>scene.endFrame>scene.startFrame
-      && scene.endFrame<=durationInFrames
-      && (index===0||scene.startFrame===brief.scenes[index-1].endFrame));
-  if(alreadyValid)return brief;
-  const count=brief.scenes.length;
-  return {...brief,scenes:brief.scenes.map((scene,index)=>({
-    ...scene,
-    startFrame:Math.round(index*durationInFrames/count),
-    endFrame:Math.round((index+1)*durationInFrames/count),
-  }))};
-}
-function restrictHeadlinesToQuotedCopy(brief:ReturnType<typeof briefSchema.parse>,prompt:string){
-  const quoted=[...prompt.matchAll(/["“]([^"”]{1,80})["”]/g)].map(match=>match[1].trim().toLocaleLowerCase().replace(/\s+/g," "));
-  return {...brief,scenes:brief.scenes.map(scene=>{
-    const headline=scene.headline?.trim()||"";
-    const normalized=headline.toLocaleLowerCase().replace(/\s+/g," ");
-    return {...scene,headline:quoted.includes(normalized)?headline:""};
-  })};
-}
-function requestsTextFreeVideo(prompt:string){
-  return /\b(?:no|without|remove|avoid|don't|do not)\b.{0,32}\b(?:on[- ]screen\s+)?text\b/i.test(prompt)
-    || /\btext[- ]free\b/i.test(prompt);
-}
-function fallbackBrief(prompt:string,durationInFrames:number):ReturnType<typeof briefSchema.parse>{
-  const subject=prompt.replace(/\s+/g," ").trim().slice(0,240)||"a futuristic visual idea";
-  return {title:"Motion study",direction:"A clean, text-free motion-graphics interpretation of the visual idea.",scenes:[
-    {description:`Establish an abstract visual world for: ${subject}. Introduce a luminous focal shape against a deep, restrained background.`,startFrame:0,endFrame:Math.max(1,Math.round(durationInFrames*.28))},
-    {description:"Build energy as geometric elements orbit, align, and connect around the focal shape. Use clear spacing and smooth, purposeful movement.",startFrame:Math.max(1,Math.round(durationInFrames*.28)),endFrame:Math.max(2,Math.round(durationInFrames*.72))},
-    {description:"Resolve the movement into a balanced, polished composition. Let the elements settle with a subtle glow and a clean ending hold.",startFrame:Math.max(2,Math.round(durationInFrames*.72)),endFrame:durationInFrames},
-  ]};
-}
 function fallbackTheme(project: {art:string;theme_config:unknown}){
   const resolved=resolveMotionTheme(project.theme_config,project.art);
   return themeSchema.parse(resolved);
 }
-function buildSearchFeatureComposition({brief,theme,width,height,fps,durationInFrames}:{brief:ReturnType<typeof briefSchema.parse>;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
-  const demo=brief.searchDemo;
-  if(!demo)return null;
-  const features=demo.features.slice(0,3);
-  const featureData=JSON.stringify(features);
-  const defaultTheme=JSON.stringify(theme);
-  const scale=Math.min(width/1920,height/1080);
-  const fieldWidth=Math.min(1200*scale,width-96*scale);
-  const cardWidth=Math.min(480*scale,(width-180*scale)/3);
-  const gap=Math.min(60*scale,Math.max(24*scale,(width-3*cardWidth)/4));
-  const rowWidth=cardWidth*3+gap*2;
-  const startX=(width-rowWidth)/2;
-  const cardHeight=240*scale;
-  const fieldY=300*scale;
-  const headingY=430*scale;
-  const cardsY=540*scale;
-  const smallCanvas=scale<0.7;
-  return `import React from "react";
-import {AbsoluteFill, Interactive, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
-import {BotMessageSquare, Headset, CalendarClock} from "lucide-react";
-
-export type MotionTheme = {
-  colors: {background: string; foreground: string; primary: string; secondary: string};
-  typography: {fontFamily: string; headingWeight: number; bodySize: number};
-  mood: string;
-  motion: {intensity: "subtle" | "balanced" | "energetic"; transitionFrames: number};
-};
-const defaultTheme: MotionTheme = ${defaultTheme};
-const query = ${JSON.stringify(demo.query)};
-const features: string[] = ${featureData};
-const layout = {scale:${scale}, fieldWidth:${fieldWidth}, cardWidth:${cardWidth}, gap:${gap}, rowWidth:${rowWidth}, startX:${startX}, cardHeight:${cardHeight}, fieldY:${fieldY}, headingY:${headingY}, cardsY:${cardsY}, smallCanvas:${smallCanvas}};
-
-const FeatureIcon = ({index, color}: {index:number; color:string}) => {
-  const Icon=[BotMessageSquare,Headset,CalendarClock][index%3];
-  return <Icon size={34*layout.scale} color={color} strokeWidth={1.6} aria-hidden="true"/>;
-};
-
-const SearchBar = ({theme}:{theme:MotionTheme}) => {
-  const frame=useCurrentFrame();
-  return <Interactive.Div name="Search field" style={{position:"absolute",left:"50%",top:layout.fieldY,width:layout.fieldWidth,height:88*layout.scale,boxSizing:"border-box",translate:"-50% 0px",display:"flex",alignItems:"center",gap:22*layout.scale,padding:"0 "+(32*layout.scale)+"px",border:"1.5px solid "+theme.colors.primary,borderRadius:18*layout.scale,backgroundColor:"#17130f",boxShadow:"0 0 "+(18*layout.scale)+"px "+theme.colors.primary+"26, inset 0 0 18px "+theme.colors.primary+"0d",color:theme.colors.foreground,fontFamily:theme.typography.fontFamily}}>
-    <Interactive.Div name="Search icon" style={{width:25*layout.scale,height:25*layout.scale,border:"2px solid "+theme.colors.secondary,borderRadius:"50%",position:"relative",opacity:0.9,flexShrink:0}}><span style={{position:"absolute",width:10*layout.scale,height:2*layout.scale,backgroundColor:theme.colors.secondary,right:-7*layout.scale,bottom:0,rotate:"45deg",transformOrigin:"left center"}}/></Interactive.Div>
-    <Interactive.Span name="Search query" style={{fontSize:(layout.smallCanvas?30:38)*layout.scale,fontWeight:600,letterSpacing:-0.5*layout.scale,flex:1}}>{query}</Interactive.Span>
-    <Interactive.Div name="Search status" style={{display:"flex",alignItems:"center",gap:10*layout.scale,color:theme.colors.secondary,fontSize:16*layout.scale,opacity:interpolate(frame,[0,20],[1,0],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),whiteSpace:"nowrap"}}>
-      <span style={{width:16*layout.scale,height:16*layout.scale,borderRadius:"50%",border:"2px solid "+theme.colors.primary+"55",borderTopColor:theme.colors.primary,rotate:(frame*12)+"deg"}}/>Searching...
-    </Interactive.Div>
-  </Interactive.Div>;
-};
-
-const FeatureCard = ({index,label,theme}:{index:number;label:string;theme:MotionTheme}) => {
-  const frame=useCurrentFrame();
-  const {fps}=useVideoConfig();
-  const entrance=25+index*12;
-  const reveal=spring({frame:Math.max(0,frame-entrance),fps,config:{damping:22,stiffness:105,mass:0.85}});
-  const opacity=interpolate(frame,[entrance,entrance+10],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
-  const pulseStart=110+index*12;
-  const pulse=interpolate(frame,[pulseStart,pulseStart+5,pulseStart+12],[0.42,1,0.48],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
-  return <Interactive.Div name={label+" feature card"} style={{position:"absolute",left:layout.startX+index*(layout.cardWidth+layout.gap),top:layout.cardsY,width:layout.cardWidth,height:layout.cardHeight,boxSizing:"border-box",padding:26*layout.scale,border:"1px solid "+theme.colors.primary+"55",borderRadius:16*layout.scale,backgroundColor:"#151311",boxShadow:"0 12px 34px #00000038, 0 0 18px "+theme.colors.primary+"12",color:theme.colors.foreground,fontFamily:theme.typography.fontFamily,opacity,translate:"0px "+((1-reveal)*42*layout.scale)+"px",scale:0.98+reveal*0.02,overflow:"hidden"}}>
-    <Interactive.Div name={label+" amber top rule"} style={{position:"absolute",top:0,left:0,right:0,height:3*layout.scale,backgroundColor:theme.colors.primary,opacity:pulse,boxShadow:"0 0 "+(12*layout.scale)+"px "+theme.colors.primary+"88"}}/>
-    <Interactive.Div name={label+" line icon"} style={{width:54*layout.scale,height:54*layout.scale,borderRadius:14*layout.scale,display:"flex",alignItems:"center",justifyContent:"center",backgroundColor:theme.colors.primary+"12",border:"1px solid "+theme.colors.primary+"32",marginBottom:26*layout.scale}}><FeatureIcon index={index} color={theme.colors.primary}/></Interactive.Div>
-    <Interactive.Div name={label+" label"} style={{fontSize:(layout.smallCanvas?25:30)*layout.scale,lineHeight:1.15,fontWeight:650,letterSpacing:-0.4*layout.scale,maxWidth:"100%"}}>{label}</Interactive.Div>
-    <Interactive.Div name={label+" ember edge"} style={{position:"absolute",left:0,bottom:0,width:4*layout.scale,height:"100%",background:"linear-gradient(180deg, transparent, "+theme.colors.primary+"55, transparent)",opacity:0.45}}/>
-  </Interactive.Div>;
-};
-
-const SearchFeatureScene = ({theme}:{theme:MotionTheme}) => {
-  const frame=useCurrentFrame();
-  const headingOpacity=interpolate(frame,[15,25],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
-  const underlineOpacity=interpolate(frame,[160,178],[0,0.58],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
-  return <AbsoluteFill style={{backgroundColor:theme.colors.background,color:theme.colors.foreground,fontFamily:theme.typography.fontFamily,overflow:"hidden"}}>
-    <Interactive.Div name="Calmed ember backdrop" style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 50% 38%, "+theme.colors.primary+"0c, transparent 48%), linear-gradient(180deg, "+theme.colors.background+", #0c0c0d)"}}/>
-    <Interactive.Div name="Quiet upper ember glow" style={{position:"absolute",left:"50%",top:layout.fieldY-36*layout.scale,width:layout.fieldWidth*0.84,height:110*layout.scale,translate:"-50% 0px",borderRadius:"50%",backgroundColor:theme.colors.primary,filter:"blur("+(42*layout.scale)+"px)",opacity:0.055}}/>
-    <SearchBar theme={theme}/>
-    <Interactive.Div name="Features heading" style={{position:"absolute",left:0,right:0,top:layout.headingY,textAlign:"center",fontSize:22*layout.scale,fontWeight:600,letterSpacing:2.4*layout.scale,textTransform:"uppercase",color:theme.colors.secondary,opacity:headingOpacity}}>Features</Interactive.Div>
-    {features.map((label,index)=><FeatureCard key={label+index} index={index} label={label} theme={theme}/>)}
-    <Interactive.Div name="Subdued ember underline" style={{position:"absolute",left:layout.startX,top:layout.cardsY+layout.cardHeight+38*layout.scale,width:layout.rowWidth,height:1*layout.scale,background:"linear-gradient(90deg, transparent, "+theme.colors.primary+"88 12%, "+theme.colors.primary+"88 88%, transparent)",opacity:underlineOpacity}}/>
-    <Interactive.Div name="Feature continuation ellipsis" style={{position:"absolute",left:layout.startX+layout.rowWidth-18*layout.scale,top:layout.cardsY+layout.cardHeight+48*layout.scale,color:theme.colors.secondary,fontSize:20*layout.scale,letterSpacing:6*layout.scale,opacity:interpolate(frame,[160,180],[0,0.38],{extrapolateLeft:"clamp",extrapolateRight:"clamp"})}}>···</Interactive.Div>
-  </AbsoluteFill>;
-};
-
-export default function MotionVideo({theme}:{theme:MotionTheme}) {
-  const {durationInFrames}=useVideoConfig();
-  return <AbsoluteFill style={{backgroundColor:theme.colors.background}}><Sequence name="Search and features" from={0} durationInFrames={durationInFrames}><SearchFeatureScene theme={theme}/></Sequence></AbsoluteFill>;
+function fallbackVideoPrompt(prompt:string,{width,height,fps,durationInFrames}:{width:number;height:number;fps:number;durationInFrames:number}){
+  return `Create a polished ${Math.round(durationInFrames/fps)}-second ${width>=height?"landscape":"portrait"} motion-graphics video based on the user's brief below. Make the requested subject and intent immediately clear. Build a visually distinct opening, development, payoff, and resolved ending across the full runtime. Turn the key idea into concrete visible actions: designed objects enter, move with purpose, transform, assemble, interact, and settle into a finished composition. Use a composed, continuously engaging frame with clear focal hierarchy, layered depth, strong contrast, and smooth transitions. Use the supplied saved theme consistently; do not hold on a blank screen, a lone dot, a static card, or a flat full-frame color. Show only audience-facing copy specifically requested in the brief, preserving its exact wording and order. Never display the full prompt or production instructions. End with a clean, intentional final hold.\n\nUSER'S ORIGINAL BRIEF (reference only; never display it verbatim):\n${prompt}`;
 }
-export const videoConfig={width:${width},height:${height},fps:${fps},durationInFrames:${durationInFrames},defaultProps:{theme:defaultTheme}};
-`;
-}
-
-function buildSafeComposition({brief,theme,width,height,fps,durationInFrames}:{brief:ReturnType<typeof briefSchema.parse>;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
-  const scenes=JSON.stringify(brief.scenes.map((scene,index)=>({...scene,label:`${String(index+1).padStart(2,"0")} / ${brief.scenes.length}`})));
-  const defaultTheme=JSON.stringify(theme);
-  return `import React from "react";
-import {AbsoluteFill, Easing, Interactive, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
-
-export type MotionTheme = {
-  colors: {background: string; foreground: string; primary: string; secondary: string};
-  typography: {fontFamily: "Arial" | "Georgia" | "Verdana" | "Trebuchet MS"; headingWeight: number; bodySize: number};
-  mood: string;
-  motion: {intensity: "subtle" | "balanced" | "energetic"; transitionFrames: number};
-};
-type SceneData = {description: string; headline?: string; startFrame: number; endFrame: number; label: string};
-const scenes: SceneData[] = ${scenes};
-const defaultTheme: MotionTheme = ${defaultTheme};
-const SceneCard = ({scene, index, theme}: {scene: SceneData; index: number; theme: MotionTheme}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-  const duration = scene.endFrame - scene.startFrame;
-  const words = (scene.headline?.trim() || "").split(/\\s+/).slice(0, 5).join(" ");
-  return <AbsoluteFill name={"Scene " + (index + 1)} style={{backgroundColor: theme.colors.background, color: theme.colors.foreground, fontFamily: theme.typography.fontFamily, opacity: interpolate(frame, [Math.max(0, duration - theme.motion.transitionFrames), duration], [1, 0], {extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.bezier(0.4, 0, 1, 1)}), overflow: "hidden"}}>
-    <Interactive.Div name={"Scene " + (index + 1) + " glow"} style={{position: "absolute", inset: 0, background: "radial-gradient(circle at 70% 25%, " + theme.colors.primary + "55, transparent 42%)"}} />
-    <Interactive.Div name={"Scene " + (index + 1) + " orbit"} style={{position: "absolute", width: 520, height: 520, borderRadius: "50%", border: "2px solid " + theme.colors.secondary, right: interpolate(frame, [0, duration], [-124, -58], {extrapolateLeft: "clamp", extrapolateRight: "clamp"}), top: interpolate(frame, [0, duration], [-184, -118], {extrapolateLeft: "clamp", extrapolateRight: "clamp"}), scale: spring({frame, fps, config: {damping: 18, stiffness: theme.motion.intensity === "energetic" ? 170 : 110}}), opacity: 0.55}} />
-    {words && <Interactive.Div name={"Scene " + (index + 1) + " message"} style={{position: "absolute", left: 96, right: 140, bottom: 120, translate: interpolate(frame, [0, Math.min(duration, Math.round(0.8 * fps))], ["0px 90px", "0px 0px"], {extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.bezier(0.16, 1, 0.3, 1)})}}>
-      <Interactive.Div name={"Scene " + (index + 1) + " accent"} style={{height: 8, width: interpolate(frame, [0, Math.min(duration, Math.round(0.8 * fps))], [96, 276], {extrapolateLeft: "clamp", extrapolateRight: "clamp"}), backgroundColor: theme.colors.primary, marginBottom: 34}} />
-      <Interactive.H1 name={"Scene " + (index + 1) + " title"} style={{fontSize: Math.max(64, theme.typography.bodySize * 1.8), lineHeight: 1.02, letterSpacing: -2.5, maxWidth: 1280, margin: 0, fontWeight: theme.typography.headingWeight, textTransform: "none"}}>{words}</Interactive.H1>
-    </Interactive.Div>}
-    <Interactive.Div name={"Scene " + (index + 1) + " progress"} style={{position: "absolute", left: 0, bottom: 0, height: 10, width: interpolate(frame, [0, duration], ["0%", "100%"], {extrapolateLeft: "clamp", extrapolateRight: "clamp"}), backgroundColor: theme.colors.primary}} />
-  </AbsoluteFill>;
-};
-
-export default function MotionVideo({theme}: {theme: MotionTheme}) {
-  return <AbsoluteFill style={{backgroundColor: theme.colors.background}}>{scenes.map((scene, index) => <Sequence key={scene.label} from={scene.startFrame} durationInFrames={scene.endFrame - scene.startFrame}><SceneCard scene={scene} index={index} theme={theme} /></Sequence>)}</AbsoluteFill>;
-}
-
-export const videoConfig = {width: ${width}, height: ${height}, fps: ${fps}, durationInFrames: ${durationInFrames}, defaultProps: {theme: defaultTheme}};
-`;
-}
-
 function buildVisualQualityFallback({prompt,theme,width,height,fps,durationInFrames}:{prompt:string;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
   const requestedLabels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim());
   const fallbackLabels=["IDEA","STORYBOARD","MOTION","PREVIEW","READY TO SHARE","From idea to motion."];
@@ -184,16 +27,19 @@ function buildVisualQualityFallback({prompt,theme,width,height,fps,durationInFra
   }));
   const total=Math.max(1,durationInFrames-1);
   const config=JSON.stringify({width,height,fps,durationInFrames,colors:theme.colors,typography:theme.typography,scenes,total});
+  const sequenceMarkup=scenes.map((_,index)=>`<Sequence key={${index}} from={design.scenes[${index}].start} durationInFrames={design.scenes[${index}].end-design.scenes[${index}].start}><Scene scene={design.scenes[${index}]} index={${index}} theme={theme}/></Sequence>`).join("");
   return `import React from "react";
 import {AbsoluteFill, Easing, Interactive, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
+type MotionTheme = {colors:{background:string;foreground:string;primary:string;secondary:string};typography:{fontFamily:string;headingWeight:number;bodySize:number};mood:string;motion:{intensity:"subtle"|"balanced"|"energetic";transitionFrames:number}};
 const design=${config};
-function Scene({scene,index}:{scene:typeof design.scenes[number];index:number}){
+const defaultTheme:MotionTheme=${JSON.stringify(theme)};
+function Scene({scene,index,theme}:{scene:typeof design.scenes[number];index:number;theme:MotionTheme}){
  const frame=useCurrentFrame(); const {fps}=useVideoConfig();
  const span=Math.max(1,scene.end-scene.start); const p=interpolate(frame,[0,span],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
  const enter=spring({frame,fps,config:{damping:18,stiffness:95,mass:0.8}});
- const accent=design.colors.primary, violet=design.colors.secondary, fg=design.colors.foreground;
+ const accent=theme.colors.primary, violet=theme.colors.secondary, fg=theme.colors.foreground;
  const label=scene.label;
- return <AbsoluteFill style={{backgroundColor:design.colors.background,overflow:"hidden",fontFamily:design.typography.fontFamily,color:fg}}>
+ return <AbsoluteFill style={{backgroundColor:theme.colors.background,overflow:"hidden",fontFamily:theme.typography.fontFamily,color:fg}}>
   <Interactive.Div name="Ambient gradient" style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 78% 24%, "+accent+"42, transparent 42%), radial-gradient(ellipse at 20% 80%, "+violet+"28, transparent 48%)"}}/>
   <Interactive.Div name="Orbit ring" style={{position:"absolute",left:"50%",top:"50%",width:"58vmin",height:"58vmin",border:"2px solid "+violet+"88",borderRadius:"50%",translate:"-50% -50%",rotate:(p*38+index*18)+"deg",scale:0.88+enter*0.12,opacity:0.58}}/>
   <Interactive.Div name="Orbit ring inner" style={{position:"absolute",left:"50%",top:"50%",width:"39vmin",height:"39vmin",border:"1px solid "+accent+"99",borderRadius:"50%",translate:"-50% -50%",rotate:(-p*62-index*13)+"deg",scale:0.84+enter*0.16,opacity:0.72}}/>
@@ -201,20 +47,20 @@ function Scene({scene,index}:{scene:typeof design.scenes[number];index:number}){
   {scene.mode===1&&<Interactive.Div name="Storyboard panels" style={{position:"absolute",left:"50%",top:"50%",display:"flex",gap:18,translate:"-50% -50%",opacity:interpolate(frame,[0,Math.min(12,span)],[0.12,0.98],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),scale:0.8+0.2*enter}}>{[0,1,2].map((n)=><div key={n} style={{position:"relative",width:"17vmin",height:"11vmin",border:"1px solid "+accent+"99",borderRadius:14,background:"linear-gradient(145deg,"+violet+"44,"+accent+"30)",transform:"translateY("+(Math.sin(frame/13+n)*12)+"px)"}}><div style={{position:"absolute",left:"16%",right:"16%",top:"25%",height:"2px",background:fg,opacity:0.65}}/><div style={{position:"absolute",left:"16%",width:"45%",bottom:"24%",height:"20%",borderRadius:8,background:n%2?accent:violet}}/></div>)}</Interactive.Div>}
   {scene.mode===3&&<Interactive.Div name="Composed motion preview" style={{position:"absolute",left:"50%",top:"50%",width:"min(52vw,820px)",height:"min(34vw,460px)",translate:"-50% -50%",border:"1px solid "+violet+"aa",borderRadius:22,background:"linear-gradient(135deg,#171520,"+accent+"20 55%,"+violet+"35)",boxShadow:"0 28px 90px #0009",scale:0.86+0.14*enter,opacity:enter}}><div style={{position:"absolute",width:"28%",aspectRatio:"1",borderRadius:"50%",left:"34%",top:"22%",background:"radial-gradient(circle at 35% 35%,"+fg+","+accent+" 36%,"+violet+" 68%,transparent 70%)",filter:"drop-shadow(0 0 30px "+accent+")",rotate:(frame*1.8)+"deg"}}/><div style={{position:"absolute",left:"18%",right:"18%",bottom:"18%",height:3,background:"linear-gradient(90deg,transparent,"+accent+","+violet+",transparent)"}}/></Interactive.Div>}
   {scene.mode===4&&<Interactive.Div name="Ready video file tile" style={{position:"absolute",left:"50%",top:"48%",translate:"-50% -50%",width:"min(32vw,480px)",height:"min(21vw,280px)",border:"1px solid "+accent+"99",borderRadius:22,background:"linear-gradient(145deg,"+violet+"36,#121116)",boxShadow:"0 22px 70px #000a,0 0 38px "+accent+"28",scale:0.82+0.18*enter,opacity:enter}}><div style={{position:"absolute",left:"50%",top:"50%",translate:"-50% -50%",width:0,height:0,borderTop:"22px solid transparent",borderBottom:"22px solid transparent",borderLeft:"34px solid "+fg,filter:"drop-shadow(0 0 16px "+accent+")"}}/></Interactive.Div>}
-  <Interactive.Div name="Scene label" style={{position:"absolute",left:"50%",bottom:"13%",translate:"-50% 0",fontSize:"clamp(24px,4vw,52px)",fontWeight:design.typography.headingWeight,letterSpacing:scene.mode===5?"0.02em":"0.16em",textAlign:"center",opacity:interpolate(frame,[0,Math.min(10,span)],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),textShadow:"0 0 28px "+accent+"88"}}>{label}</Interactive.Div>
+  <Interactive.Div name="Scene label" style={{position:"absolute",left:"50%",bottom:"13%",translate:"-50% 0",fontSize:"clamp(24px,4vw,52px)",fontWeight:theme.typography.headingWeight,letterSpacing:scene.mode===5?"0.02em":"0.16em",textAlign:"center",opacity:interpolate(frame,[0,Math.min(10,span)],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),textShadow:"0 0 28px "+accent+"88"}}>{label}</Interactive.Div>
   <Interactive.Div name="Animated progress stroke" style={{position:"absolute",left:"12%",bottom:"8%",height:4,width:"76%",transformOrigin:"left",scaleX:p,background:"linear-gradient(90deg,"+accent+","+violet+")"}}/>
  </AbsoluteFill>;
 }
-export default function MotionVideo(){return <AbsoluteFill>{design.scenes.map((scene,index)=><Sequence key={index} from={scene.start} durationInFrames={scene.end-scene.start}><Scene scene={scene} index={index}/></Sequence>)}</AbsoluteFill>}
-export const videoConfig={width:design.width,height:design.height,fps:design.fps,durationInFrames:design.durationInFrames};
+export default function MotionVideo({theme}:{theme:MotionTheme}){return <AbsoluteFill>{${sequenceMarkup}}</AbsoluteFill>}
+export const videoConfig={width:design.width,height:design.height,fps:design.fps,durationInFrames:design.durationInFrames,defaultProps:{theme:defaultTheme}};
 `;
 }
 
-function assessVisualComposition(code:string,prompt:string,brief:ReturnType<typeof briefSchema.parse>){
+function assessVisualComposition(code:string,prompt:string){
   const issues:string[]=[];
   const labels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim()).filter(label=>label.length>1);
   const distinctScenes=(code.match(/<Sequence\b/g)||[]).length;
-  if(distinctScenes<Math.min(5,Math.max(3,brief.scenes.length)))issues.push("Implement each story beat as its own timed scene; do not collapse this multi-stage brief into a single card or background.");
+  if(distinctScenes<Math.min(6,Math.max(3,labels.length)))issues.push("Implement each story beat as its own timed scene; do not collapse this multi-stage brief into a single card or background.");
   if((code.match(/<Interactive\./g)||[]).length<8||!/(?:radial-gradient|linear-gradient|<svg|<path|borderRadius|border:|<canvas|polygon|clipPath)/i.test(code))issues.push("The visual layer needs multiple deliberate designed shapes, depth, and composed graphics beyond a flat fill.");
   if(!/(?:interpolate|spring)\s*\(/.test(code))issues.push("Add visible frame-driven animation to key visual elements.");
   let lastLabelPosition=-1;
@@ -267,26 +113,7 @@ export const generateMotion = inngest.createFunction({
   const fps=30,durationInFrames=project.seconds*fps;
   const [rw,rh]=project.ratio.split(":").map(Number);
   const width=rw>rh?1920:1080,height=Math.round(width*rh/rw);
-  const context=JSON.stringify({...project,fps,durationInFrames,width,height});
-  const brief=await step.run("expand-motion-prompt",async()=>{
-    await update("generating_prompt",15);
-    let parsed:ReturnType<typeof briefSchema.parse>;
-    try{
-      parsed=await generateStructured("scene plan", briefSchema,
-        storyboardSystemPrompt(await loadRemotionCompositionSkill()),
-        instructions => generateText(instructions, context, true));
-    }catch(error){
-      console.warn("AI storyboard unavailable; using a clean visual fallback.",error instanceof Error?error.message:"Unknown provider error");
-      parsed=fallbackBrief(project.prompt,durationInFrames);
-    }
-    const timed=normalizeSceneTimings(parsed,durationInFrames);
-    const result=requestsTextFreeVideo(project.prompt)
-      ? {...timed,scenes:timed.scenes.map(scene=>({...scene,headline:""}))}
-      : timed;
-    await update("generating_prompt",30,{brief:result});
-    return result;
-  });
-  const theme=await step.run("generate-theme-config",async()=>{
+  const {refinedPrompt,theme}=await step.run("refine-video-prompt-and-theme",async()=>{
     await update("generating_theme",35);
     const saved=themeSchema.safeParse(project.theme_config);
     let result:ReturnType<typeof themeSchema.parse>;
@@ -294,24 +121,36 @@ export const generateMotion = inngest.createFunction({
     else try{
       result=await generateStructured("theme", themeSchema,
         'Return JSON only. Design a dynamic motion theme with this exact shape: {colors:{background:"#hexhex",foreground:"#hexhex",primary:"#hexhex",secondary:"#hexhex"},typography:{fontFamily:"Arial"|"Georgia"|"Verdana"|"Trebuchet MS",headingWeight:400-900,bodySize:20-80},mood:string,motion:{intensity:"subtle"|"balanced"|"energetic",transitionFrames:3-45}}. Ensure legible text contrast.',
-        instructions => generateText(instructions, JSON.stringify({project,brief}), true));
+        instructions => generateText(instructions, JSON.stringify({project,originalPrompt:project.prompt}), true));
     }catch(error){
       console.warn("AI theme unavailable; using the saved studio palette.",error instanceof Error?error.message:"Unknown provider error");
       result=fallbackTheme(project);
     }
     await update("generating_theme",50,{theme:result});
-    return result;
+    await update("generating_prompt",55);
+    let productionPrompt:string;
+    try{
+      const refined=await generateText(
+        videoPromptRefinementSystemPrompt(),
+        JSON.stringify({userBrief:project.prompt,video:{seconds:project.seconds,width,height,fps},visualTheme:result}),
+      );
+      productionPrompt=refined.trim();
+      if(productionPrompt.length<80)throw new Error("The refined video prompt was too short to guide composition generation.");
+    }catch(error){
+      console.warn("AI prompt refinement unavailable; using a production-ready prompt wrapper.",error instanceof Error?error.message:"Unknown provider error");
+      productionPrompt=fallbackVideoPrompt(project.prompt,{width,height,fps,durationInFrames});
+    }
+    await update("generating_prompt",60,{brief:{refinedPrompt:productionPrompt}});
+    return {refinedPrompt:productionPrompt,theme:result};
   });
   const code=await step.run("generate-remotion-composition",async()=>{
     await update("generating_composition",55);
-    const searchComposition=buildSearchFeatureComposition({brief,theme,width,height,fps,durationInFrames});
-    if(searchComposition&&/\b(search|searching|search bar|search field|search engine|chatxify)\b/i.test(project.prompt))return searchComposition;
     const skill=await loadRemotionCompositionSkill();
     try{
       return await generateText(
         remotionCompositionSystemPrompt(skill),
-        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
-          requirement:"Build distinct timed, visibly animated scenes for the full duration following the original prompt. Include the labels and closing copy requested by that prompt. Do not produce a background-only composition."}));
+        JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
+          requirement:"Treat refinedProductionPrompt as the primary creative direction. Cross-check originalPrompt to preserve user intent, exact permitted on-screen text, and prohibitions. Build distinct timed, visibly animated scenes for the full duration. Do not produce a background-only composition, generic template, long blank hold, lone decorative dot, or flat full-frame color."}));
     }catch(error){
       console.error("AI composition draft unavailable",error);
       throw error;
@@ -320,21 +159,21 @@ export const generateMotion = inngest.createFunction({
   await step.run("validate-and-save",async()=>{
     await update("validating",90);
     let validatedCode=code;
-    let problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
+    let problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
     if(problems.length){
       console.warn("Generated composition requires repair:",problems);
       try{
         validatedCode=await generateText(
           remotionCompositionSystemPrompt(await loadRemotionCompositionSkill()),
-          JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
+          JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
             previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
       }catch(error){
         console.warn("AI composition repair unavailable; using visual fallback.",error instanceof Error?error.message:"Unknown provider error");
       }
-      problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
+      problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
       if(problems.length){
         validatedCode=buildVisualQualityFallback({prompt:project.prompt,theme,width,height,fps,durationInFrames});
-        problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
+        problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
       }
     }
     if(problems.length)throw new Error("Composition type validation failed: "+problems.join("; "));
