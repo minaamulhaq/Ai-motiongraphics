@@ -9,7 +9,10 @@ export async function studioDatabase() {
   if (!url || !key) throw new Error("The studio database is not configured.");
   const session=await auth();
   return createClient<Database>(url,key,{
-    accessToken:()=>session.userId ? session.getToken({template:"aivid-supabase"}) : Promise.resolve(null),
+    // Clerk's native Supabase integration adds the authenticated role claim
+    // to the standard session token. Use that token instead of the deprecated
+    // per-request JWT template.
+    accessToken:()=>session.userId ? session.getToken() : Promise.resolve(null),
     auth:{persistSession:false,autoRefreshToken:false},
   });
 }

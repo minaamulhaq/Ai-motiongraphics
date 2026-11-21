@@ -33,6 +33,18 @@ function requestsTextFreeVideo(prompt:string){
   return /\b(?:no|without|remove|avoid|don't|do not)\b.{0,32}\b(?:on[- ]screen\s+)?text\b/i.test(prompt)
     || /\btext[- ]free\b/i.test(prompt);
 }
+function fallbackBrief(prompt:string,durationInFrames:number):ReturnType<typeof briefSchema.parse>{
+  const subject=prompt.replace(/\s+/g," ").trim().slice(0,240)||"a futuristic visual idea";
+  return {title:"Motion study",direction:"A clean, text-free motion-graphics interpretation of the visual idea.",scenes:[
+    {description:`Establish an abstract visual world for: ${subject}. Introduce a luminous focal shape against a deep, restrained background.`,startFrame:0,endFrame:Math.max(1,Math.round(durationInFrames*.28))},
+    {description:"Build energy as geometric elements orbit, align, and connect around the focal shape. Use clear spacing and smooth, purposeful movement.",startFrame:Math.max(1,Math.round(durationInFrames*.28)),endFrame:Math.max(2,Math.round(durationInFrames*.72))},
+    {description:"Resolve the movement into a balanced, polished composition. Let the elements settle with a subtle glow and a clean ending hold.",startFrame:Math.max(2,Math.round(durationInFrames*.72)),endFrame:durationInFrames},
+  ]};
+}
+function fallbackTheme(project: {art:string;theme_config:unknown}){
+  const resolved=resolveMotionTheme(project.theme_config,project.art);
+  return themeSchema.parse(resolved);
+}
 function buildSearchFeatureComposition({brief,theme,width,height,fps,durationInFrames}:{brief:ReturnType<typeof briefSchema.parse>;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
   const demo=brief.searchDemo;
   if(!demo)return null;
@@ -192,9 +204,15 @@ export const generateMotion = inngest.createFunction({
   const context=JSON.stringify({...project,fps,durationInFrames,width,height});
   const brief=await step.run("expand-motion-prompt",async()=>{
     await update("generating_prompt",15);
-    const parsed=await generateStructured("scene plan", briefSchema,
-      storyboardSystemPrompt(await loadRemotionCompositionSkill()),
-      instructions => generateText(instructions, context, true));
+    let parsed:ReturnType<typeof briefSchema.parse>;
+    try{
+      parsed=await generateStructured("scene plan", briefSchema,
+        storyboardSystemPrompt(await loadRemotionCompositionSkill()),
+        instructions => generateText(instructions, context, true));
+    }catch(error){
+      console.warn("AI storyboard unavailable; using a clean visual fallback.",error instanceof Error?error.message:"Unknown provider error");
+      parsed=fallbackBrief(project.prompt,durationInFrames);
+    }
     const result=restrictHeadlinesToQuotedCopy(normalizeSceneTimings(parsed,durationInFrames),project.prompt);
     await update("generating_prompt",30,{brief:result});
     return result;
@@ -202,9 +220,16 @@ export const generateMotion = inngest.createFunction({
   const theme=await step.run("generate-theme-config",async()=>{
     await update("generating_theme",35);
     const saved=themeSchema.safeParse(project.theme_config);
-    const result=saved.success?saved.data:await generateStructured("theme", themeSchema,
-      'Return JSON only. Design a dynamic motion theme with this exact shape: {colors:{background:"#hexhex",foreground:"#hexhex",primary:"#hexhex",secondary:"#hexhex"},typography:{fontFamily:"Arial"|"Georgia"|"Verdana"|"Trebuchet MS",headingWeight:400-900,bodySize:20-80},mood:string,motion:{intensity:"subtle"|"balanced"|"energetic",transitionFrames:3-45}}. Ensure legible text contrast.',
-      instructions => generateText(instructions, JSON.stringify({project,brief}), true));
+    let result:ReturnType<typeof themeSchema.parse>;
+    if(saved.success)result=saved.data;
+    else try{
+      result=await generateStructured("theme", themeSchema,
+        'Return JSON only. Design a dynamic motion theme with this exact shape: {colors:{background:"#hexhex",foreground:"#hexhex",primary:"#hexhex",secondary:"#hexhex"},typography:{fontFamily:"Arial"|"Georgia"|"Verdana"|"Trebuchet MS",headingWeight:400-900,bodySize:20-80},mood:string,motion:{intensity:"subtle"|"balanced"|"energetic",transitionFrames:3-45}}. Ensure legible text contrast.',
+        instructions => generateText(instructions, JSON.stringify({project,brief}), true));
+    }catch(error){
+      console.warn("AI theme unavailable; using the saved studio palette.",error instanceof Error?error.message:"Unknown provider error");
+      result=fallbackTheme(project);
+    }
     await update("generating_theme",50,{theme:result});
     return result;
   });

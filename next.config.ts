@@ -9,7 +9,18 @@ const nextConfig: NextConfig = {
     "esbuild",
   ],
   outputFileTracingIncludes: {
-    "/api/inngest": ["./.agents/skills/remotion-best-practices/**/*.md", "./remotion/**/*.ts", "./remotion/**/*.tsx"],
+    "/api/inngest": [
+      "./.agents/skills/remotion-best-practices/**/*.md",
+      "./remotion/**/*.ts",
+      "./remotion/**/*.tsx",
+      // validateComposition uses TypeScript's compiler API at runtime. Its
+      // lib files and React declarations are loaded dynamically and otherwise
+      // omitted from Vercel's trace for this route.
+      "./node_modules/typescript/lib/**/*",
+      "./node_modules/@types/react/**/*",
+      "./node_modules/@types/prop-types/**/*",
+      "./node_modules/csstype/**/*",
+    ],
   },
   /* config options here */
   experimental: {
