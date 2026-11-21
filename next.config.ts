@@ -1,4 +1,17 @@
 import type { NextConfig } from "next";
+import { getRemotionRuntimePackageIncludes } from "./scripts/remotion-runtime-dependencies.cjs";
+
+const remotionRuntimePackageIncludes = getRemotionRuntimePackageIncludes();
+const remotionRuntimeTraceIncludes = [
+  ...remotionRuntimePackageIncludes,
+  "./public/**/*",
+  "./remotion/**/*.ts",
+  "./remotion/**/*.tsx",
+  "./node_modules/typescript/lib/**/*",
+  "./node_modules/@types/react/**/*",
+  "./node_modules/@types/prop-types/**/*",
+  "./node_modules/csstype/**/*",
+];
 
 const nextConfig: NextConfig = {
   serverExternalPackages: [
@@ -23,39 +36,15 @@ const nextConfig: NextConfig = {
       "./node_modules/lucide-react/**/*",
     ],
     "/api/inngest": [
-      // Remotion's bundler resolves Mediabunny's conditional package exports
-      // while packaging a render. Include the complete dist targets in Vercel.
-      "./node_modules/mediabunny/**/*",
-      "./node_modules/@remotion/effects/**/*",
-      // The dynamic Remotion webpack bundle resolves package subpath exports
-      // (including effects/brightness/preview) that static tracing misses.
-      "./node_modules/@remotion/**/*",
-      "./node_modules/@remotion/studio/**/*",
-      "./node_modules/@remotion/studio-shared/**/*",
-      "./node_modules/@remotion/studio-protocol/**/*",
-      // NFT follows Node's CommonJS conditions for the dynamically loaded
-      // Webpack toolchain. Webpack also resolves ESM import targets. Include
-      // this small source-map package scope so both conditions' files exist.
-      "./node_modules/@jridgewell/**/*",
-      "./node_modules/lucide-react/**/*",
-      "./node_modules/react/**/*",
-      "./node_modules/react-dom/**/*",
-      "./node_modules/scheduler/**/*",
-      "./public/**/*",
+      // @remotion/bundler invokes Webpack dynamically after Vercel has traced
+      // this route. NFT follows Node's CommonJS conditions, while Webpack
+      // resolves ESM/browser exports from Remotion Studio and generated TSX.
+      // Include the installed runtime dependency closure so both export targets
+      // and their transitive modules are present without copying all node_modules.
+      ...remotionRuntimeTraceIncludes,
       "./.agents/skills/remotion-best-practices/**/*.md",
-      "./remotion/**/*.ts",
-      "./remotion/**/*.tsx",
-      // validateComposition uses TypeScript's compiler API at runtime. Its
-      // lib files and React declarations are loaded dynamically and otherwise
-      // omitted from Vercel's trace for this route.
-      "./node_modules/typescript/lib/**/*",
-      // Generated TSX imports Remotion directly. Keep its shipped declaration
-      // files in the serverless trace for the runtime TypeScript compiler.
-      "./node_modules/remotion/**/*",
-      "./node_modules/@types/react/**/*",
-      "./node_modules/@types/prop-types/**/*",
-      "./node_modules/csstype/**/*",
     ],
+    "/api/internal/remotion-bundle-smoke": remotionRuntimeTraceIncludes,
   },
   /* config options here */
   experimental: {

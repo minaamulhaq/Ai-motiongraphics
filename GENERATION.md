@@ -6,7 +6,9 @@
 
 Actual project exports create isolated temporary source, settings, and theme files, then bundle and deploy a separate site for that video. They do not use the demo site. Keep Next.js and Inngest running and use Export MP4 after generation completes. The AWS region, Lambda function name, bucket, and credentials must be configured for actual rendering.
 
-`node scripts/verify-remotion-bundle.cjs` checks both the manual entry and the actual temporary export bundling code locally, with AWS operations stubbed.
+`npm run remotion:bundle:smoke` bundles a small generated composition using the same temporary entry and Remotion Webpack code as export, without AWS calls. After `npm run build`, `npm run remotion:trace:verify` checks that the Inngest serverless trace contains every installed package file in the Remotion runtime dependency closure, including ESM export targets.
+
+For a production smoke check, set `REMOTION_BUNDLE_SMOKE_SECRET` in the Vercel Production environment and redeploy. Then POST to `/api/internal/remotion-bundle-smoke` with `Authorization: Bearer <the-same-secret>`. A response with `ok: true` and the deployed commit SHA confirms that Vercel completed the dynamic Remotion/Webpack bundle; this endpoint does not upload a site to S3 or invoke an AWS render. The route returns 404 when the secret is unset.
 
 Start Next.js with `npm run dev` and the Inngest development server with `npm run inngest:dev`. The Inngest dashboard is http://localhost:8288 and the registered endpoint is /api/inngest. The development server must remain running to execute jobs.
 

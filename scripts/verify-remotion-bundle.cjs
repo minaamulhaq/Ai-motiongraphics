@@ -1,53 +1,62 @@
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const os = require('node:os');
-const crypto = require('node:crypto');
-const ts = require('typescript');
-const { bundle } = require('@remotion/bundler');
+const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
+const fs = require("node:fs");
+const fsp = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const ts = require("typescript");
+const { bundle } = require("@remotion/bundler");
 
 async function main() {
-  await bundle({ entryPoint: path.resolve('remotion/src/export-composition.tsx'), outDir: path.resolve('.studio-data/remotion-bundle-check'), enableCaching: false });
-  console.log('Manual deployment entry: bundle passed.');
-
-  // Run the actual export function with AWS operations stubbed. The real bundler
-  // still processes the generated temporary files and resolves dependencies.
-  const source = await fs.readFile('lib/remotion/lambda.ts', 'utf8');
-  const code = ts.transpileModule(source.replace(/^import .*;\r?\n/gm, ''), {
+  const source = fs.readFileSync("lib/remotion/lambda.ts", "utf8").replace(/^import .*;\r?\n/gm, "");
+  const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const cleanModule = { exports: {} };
-  const cleanCode = ts.transpileModule(await fs.readFile('lib/remotion/clean-source.ts', 'utf8'), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
-  }).outputText;
-  new Function('require', 'exports', cleanCode)(require, cleanModule.exports);
+
+  const cleanSourceModule = { exports: {} };
+  const cleanSource = ts.transpileModule(
+    fs.readFileSync("lib/remotion/clean-source.ts", "utf8").replace(/^import .*;\r?\n/gm, ""),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  new Function("exports", "ts", cleanSource)(cleanSourceModule.exports, ts);
+
+  const validatorModule = { exports: {} };
+  const validatorSource = ts.transpileModule(
+    fs.readFileSync("lib/ai/validate-composition.ts", "utf8").replace(/^import .*;\r?\n/gm, ""),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  new Function("exports", "ts", "path", validatorSource)(validatorModule.exports, ts, path);
+
+  const runtime = { exports: {} };
   const bindings = {
-    cleanCompositionSource: cleanModule.exports.cleanCompositionSource,
-    ...fs, ...path, tmpdir: os.tmpdir, randomUUID: crypto.randomUUID, ts,
-    bundle, validateComposition: () => [],
-    deploySiteFromBundle: async ({ bundleDir }) => {
-      await fs.access(path.join(bundleDir, 'index.html'));
-      return { serveUrl: 'https://example.invalid/local-test' };
-    },
-    renderMediaOnLambdaAndStream: async (options) => {
-      assert.equal(options.composition, 'ProjectExport');
-      return { renderId: 'local-test', outBucket: 'test', outKey: 'video.mp4' };
-    },
+    ts,
+    bundle,
+    cleanCompositionSource: cleanSourceModule.exports.cleanCompositionSource,
+    validateComposition: validatorModule.exports.validateComposition,
+    createHash: crypto.createHash,
+    randomUUID: crypto.randomUUID,
+    existsSync: fs.existsSync,
+    readFileSync: fs.readFileSync,
+    createRequire: require("node:module").createRequire,
+    ...fsp,
+    tmpdir: os.tmpdir,
+    join: path.join,
     deleteSite: async () => {},
+    deploySiteFromBundle: async () => { throw new Error("The bundling smoke must not deploy an AWS site."); },
+    getRenderProgress: async () => { throw new Error("The bundling smoke must not contact AWS."); },
+    presignUrl: async () => { throw new Error("The bundling smoke must not contact AWS."); },
+    renderMediaOnLambdaAndStream: async () => { throw new Error("The bundling smoke must not render on AWS."); },
   };
-  const moduleExports = {};
-  new Function('exports', ...Object.keys(bindings), code)(moduleExports, ...Object.values(bindings));
-  process.env.REMOTION_AWS_REGION = 'us-east-1';
-  process.env.REMOTION_LAMBDA_FUNCTION_NAME = 'local-test';
-  process.env.REMOTION_LAMBDA_BUCKET = 'local-test';
-  const generated = `import React from 'react';
-import { AbsoluteFill } from 'remotion';
-import { Sparkles } from 'lucide-react';
-export const videoConfig = { width: 1080, height: 1920, fps: 24, durationInFrames: 48 };
-export default function Video({theme}) { return <AbsoluteFill style={{backgroundColor: theme.background}}><Sparkles/>Generated export</AbsoluteFill>; }`;
-  assert.deepEqual(moduleExports.readCompositionConfig(generated), { width: 1080, height: 1920, fps: 24, durationInFrames: 48 });
-  const result = await moduleExports.renderProjectOnLambda({ source: generated, projectId: 'local-test', title: 'Check', theme: { background: '#123456', label: '$& test' } });
-  assert.equal(result.outputKey, 'video.mp4');
-  console.log('Automatic export entry: temporary bundle passed (AWS calls stubbed).');
+  new Function("exports", ...Object.keys(bindings), compiled)(runtime.exports, ...Object.values(bindings));
+
+  const result = await runtime.exports.runRemotionBundlingSmoke();
+  assert.equal(result.ok, true);
+  assert.ok(result.bundleFiles > 0, "Webpack should produce bundle files");
+  assert.ok(result.bundleBytes > 0, "Webpack output should not be empty");
+  console.log("Remotion bundle-only smoke passed:", result);
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
