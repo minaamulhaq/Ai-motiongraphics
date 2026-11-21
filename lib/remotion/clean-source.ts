@@ -1,5 +1,65 @@
 import ts from "typescript";
 
+const LUCIDE_SYNONYMS: Record<string, string> = {
+  MagnifyingGlass: "Search",
+  MagnifyingGlassIcon: "Search",
+  SearchIcon: "Search",
+  Gear: "Settings",
+  GearIcon: "Settings",
+  Cog: "Settings",
+  TrashCan: "Trash2",
+  Bin: "Trash2",
+  Envelope: "Mail",
+  Email: "Mail",
+  PaperPlane: "Send",
+  Cross: "X",
+  Close: "X",
+  Checkmark: "Check",
+  Tick: "Check",
+  Spinner: "Loader2",
+  Loading: "Loader2",
+  PlayButton: "Play",
+  Chat: "MessageSquare",
+  ChatBubble: "MessageCircle",
+  Comment: "MessageSquare",
+  Warning: "AlertTriangle",
+  Exclamation: "AlertCircle",
+  Movie: "Film",
+  VideoCamera: "Video",
+  LightBulb: "Lightbulb",
+  Sparkle: "Sparkles",
+  Robot: "Bot",
+};
+
+let lucideExportsCache: Set<string> | null = null;
+function getLucideExports(): Set<string> {
+  if (!lucideExportsCache) {
+    try {
+      const lucide = require("lucide-react");
+      lucideExportsCache = new Set(Object.keys(lucide));
+    } catch {
+      lucideExportsCache = new Set(["Search", "Sparkles", "Play", "Send", "MessageSquare", "MessageCircle", "Check", "X", "Settings", "Loader2", "Film", "Clapperboard", "Bot", "Mail", "Clock", "Frame"]);
+    }
+  }
+  return lucideExportsCache;
+}
+
+function resolveLucideIcon(name: string): string {
+  if (LUCIDE_SYNONYMS[name]) return LUCIDE_SYNONYMS[name];
+  if (/^Icon[A-Z]/.test(name)) {
+    const candidate = name.slice(4);
+    if (LUCIDE_SYNONYMS[candidate]) return LUCIDE_SYNONYMS[candidate];
+    return resolveLucideIcon(candidate);
+  }
+  const exports = getLucideExports();
+  if (exports.has(name)) return name;
+  const lower = name.toLowerCase();
+  for (const exp of exports) {
+    if (exp.toLowerCase() === lower) return exp;
+  }
+  return "Sparkles";
+}
+
 // Remove instruction sentences accidentally copied into display strings.
 // Short intended copy (product names and feature labels) is preserved.
 export function cleanCompositionSource(source: string) {
@@ -11,19 +71,16 @@ export function cleanCompositionSource(source: string) {
   for (const statement of file.statements) {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
     
-    // Repair lucide-react imports: AI sometimes prefixes icons with "Icon" (e.g. IconSearch -> Search as IconSearch)
+    // Repair lucide-react imports: automatically fix synonyms, missing exports, and "Icon" prefixes
     if (statement.moduleSpecifier.text === "lucide-react") {
       const bindings = statement.importClause?.namedBindings;
       if (bindings && ts.isNamedImports(bindings)) {
         for (const item of bindings.elements) {
           const importedName = (item.propertyName ?? item.name).text;
-          if (/^Icon[A-Z]/.test(importedName)) {
-            const stripped = importedName.slice(4);
-            if (item.propertyName) {
-              edits.push({ start: item.propertyName.getStart(file), end: item.propertyName.end, text: stripped });
-            } else {
-              edits.push({ start: item.getStart(file), end: item.end, text: `${stripped} as ${importedName}` });
-            }
+          const localName = item.name.text;
+          const resolved = resolveLucideIcon(importedName);
+          if (resolved !== importedName) {
+            edits.push({ start: item.getStart(file), end: item.end, text: `${resolved} as ${localName}` });
           }
         }
       }
