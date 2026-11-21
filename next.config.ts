@@ -9,15 +9,17 @@ const nextConfig: NextConfig = {
     "esbuild",
   ],
   outputFileTracingIncludes: {
-    "/api/projects/[id]/preview": [
+    "/api/projects/*/preview": [
       // The preview route uses esbuild to bundle saved compositions at runtime;
       // these imports are resolved dynamically and must be present in Vercel's
       // serverless function trace.
       "./node_modules/esbuild/**/*",
+      "./node_modules/@esbuild/**/*",
       "./node_modules/@remotion/player/**/*",
       "./node_modules/remotion/**/*",
       "./node_modules/react/**/*",
       "./node_modules/react-dom/**/*",
+      "./node_modules/scheduler/**/*",
       "./node_modules/lucide-react/**/*",
     ],
     "/api/inngest": [
