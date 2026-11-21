@@ -13,20 +13,18 @@ export const briefSchema = z.object({
 });
 export async function generateText(system: string, prompt: string, json = false) {
   const openai = process.env.OPENAI_API_KEY?.trim();
-  // Prefer direct OpenAI when configured, even if an older OpenRouter key remains.
-  const router = openai ? undefined : process.env.OPENROUTER_API_KEY?.trim();
-  if (!router && !openai) throw new Error("Configure OPENROUTER_API_KEY or OPENAI_API_KEY.");
-  // The free preview model frequently truncates full Remotion TSX compositions.
-  // Use a paid model with a larger output budget unless explicitly overridden.
-  const routerModel = process.env.OPENROUTER_MODEL || "openai/gpt-4.1";
-  const model = router ? routerModel : (process.env.OPENAI_MODEL || "gpt-4o-mini");
+  if (!openai) throw new NonRetriableError("Set OPENAI_API_KEY in the server environment and redeploy. Generation requires a direct OpenAI API key.");
+  if (openai.startsWith("sk-or-")) throw new NonRetriableError("OPENAI_API_KEY contains an OpenRouter key. Replace it with a direct OpenAI API key and redeploy.");
+  // Keep provider and model fixed so stale deployment variables cannot route
+  // requests to another service or model.
+  const model = "gpt-4o-mini";
   for (let attempt = 0; attempt < 2; attempt++) {
-    const response = await fetch(router ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/chat/completions", {
-      method: "POST", headers: { "Authorization": "Bearer " + (router || openai), "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: json ? 7000 : 24000, ...(json ? { response_format: { type: "json_object" } } : {}) }),
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST", headers: { "Authorization": "Bearer " + openai, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: json ? 7000 : 16000, ...(json ? { response_format: { type: "json_object" } } : {}) }),
       signal: AbortSignal.timeout(240000)
     });
-    if (response.status === 401) throw new NonRetriableError("The configured AI provider API key was rejected. Check the server environment variables.");
+    if (response.status === 401) throw new NonRetriableError("OpenAI rejected OPENAI_API_KEY (HTTP 401). Replace the key in Vercel Production environment variables with a valid direct OpenAI API key, then redeploy.");
     if (response.status === 402) throw new NonRetriableError("AI provider credits or key spending limit cannot cover this request.");
     if (response.status === 429) {
       const errorBody = await response.json().catch(() => ({}));

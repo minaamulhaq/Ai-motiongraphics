@@ -28,7 +28,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
       }}],
     });
     const nonce=randomBytes(16).toString("base64");
-    const html=`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob:; connect-src 'none'"><style>html,body,#root{margin:0;width:100%;height:100%;overflow:hidden;background:#111;color:white}</style></head><body><div id="root"></div><script nonce="${nonce}">${result.outputFiles[0].text.replace(/<\/script/gi,"<\\/script")}</script></body></html>`;
+    const html=`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; img-src data: blob:; media-src blob:; connect-src 'none'"><style>html,body,#root{box-sizing:border-box;margin:0;width:100%;height:100%;min-width:0;min-height:0;overflow:hidden;background:#111;color:white}#root>div{box-sizing:border-box;width:100%!important;height:100%!important;min-width:0;min-height:0}</style></head><body><div id="root"></div><script nonce="${nonce}">${result.outputFiles[0].text.replace(/<\/script/gi,"<\\/script")}</script></body></html>`;
     return NextResponse.json({html},{headers:{"Cache-Control":"private, no-store"}});
   }catch(error){console.error("Video preview failed",error);return NextResponse.json({error:"Could not prepare the saved animation."},{status:503})}
 }
