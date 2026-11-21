@@ -28,7 +28,24 @@ export async function generateText(system:string,prompt:string,json=false) {
   });
   if(response.status===401)throw new NonRetriableError("The configured AI provider API key was rejected. Check the server environment variables.");
   if(response.status===402)throw new NonRetriableError("AI provider credits or key spending limit cannot cover this request.");
-  if(!response.ok)throw new Error("AI provider request failed (HTTP "+response.status+").");
+  if(response.status===429){
+    const errorBody=await response.json().catch(()=>({}));
+    const providerCode=String(errorBody.error?.code||errorBody.error?.type||"");
+    const providerMessage=String(errorBody.error?.message||"");
+    const quota=/quota|billing|credit|insufficient/i.test(providerCode+" "+providerMessage);
+    if(quota)throw new NonRetriableError("AI provider quota or billing limit reached (HTTP 429). Check billing and usage limits for the configured API key.");
+    if(attempt===0){
+      const retryAfter=Number(response.headers.get("retry-after"));
+      const delay=Number.isFinite(retryAfter)&&retryAfter>0?Math.min(retryAfter*1000,30000):2000;
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      continue;
+    }
+    throw new Error("AI provider rate limit reached twice (HTTP 429). Wait briefly and retry.");
+  }
+  if(!response.ok){
+    const body=await response.json().catch(()=>({}));
+    throw new Error("AI provider request failed (HTTP "+response.status+"): "+String(body.error?.message||"No provider detail returned."));
+  }
   const data=await response.json();
   if(data.error)throw new Error("AI provider could not complete the generation.");
   const choice=data.choices?.[0];
