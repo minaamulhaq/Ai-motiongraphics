@@ -33,6 +33,10 @@ const nextConfig: NextConfig = {
       "./node_modules/@remotion/studio/**/*",
       "./node_modules/@remotion/studio-shared/**/*",
       "./node_modules/@remotion/studio-protocol/**/*",
+      // NFT follows Node's CommonJS conditions for the dynamically loaded
+      // Webpack toolchain. Webpack also resolves ESM import targets. Include
+      // this small source-map package scope so both conditions' files exist.
+      "./node_modules/@jridgewell/**/*",
       "./node_modules/lucide-react/**/*",
       "./node_modules/react/**/*",
       "./node_modules/react-dom/**/*",
