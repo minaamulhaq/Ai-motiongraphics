@@ -3,7 +3,7 @@ import { generateStructured } from "@/lib/ai/structured";
 import { inngest } from "./client";
 import { workerDatabase } from "@/lib/supabase/worker";
 import { themeSchema, generateText } from "@/lib/ai/generate";
-import { loadRemotionCompositionSkill, remotionCompositionSystemPrompt, videoPromptRefinementSystemPrompt } from "@/lib/remotion/skill";
+import { loadHyperframesMotionGuidance, loadRemotionCompositionSkill, remotionCompositionSystemPrompt, videoPromptRefinementSystemPrompt } from "@/lib/remotion/skill";
 import { renderProjectOnLambda } from "@/lib/remotion/lambda";
 import { resolveMotionTheme } from "@/lib/motion-theme";
 import { NonRetriableError } from "inngest";
@@ -146,9 +146,10 @@ export const generateMotion = inngest.createFunction({
   const code=await step.run("generate-remotion-composition",async()=>{
     await update("generating_composition",55);
     const skill=await loadRemotionCompositionSkill();
+    const hyperframesMotionGuidance=await loadHyperframesMotionGuidance();
     try{
       return await generateText(
-        remotionCompositionSystemPrompt(skill),
+        remotionCompositionSystemPrompt(skill,hyperframesMotionGuidance),
         JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
           requirement:"Treat refinedProductionPrompt as the primary creative direction. Cross-check originalPrompt to preserve user intent, exact permitted on-screen text, and prohibitions. Build distinct timed, visibly animated scenes for the full duration. Do not produce a background-only composition, generic template, long blank hold, lone decorative dot, or flat full-frame color."}));
     }catch(error){
@@ -164,7 +165,7 @@ export const generateMotion = inngest.createFunction({
       console.warn("Generated composition requires repair:",problems);
       try{
         validatedCode=await generateText(
-          remotionCompositionSystemPrompt(await loadRemotionCompositionSkill()),
+          remotionCompositionSystemPrompt(await loadRemotionCompositionSkill(),await loadHyperframesMotionGuidance()),
           JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
             previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
       }catch(error){

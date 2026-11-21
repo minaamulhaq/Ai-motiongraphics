@@ -43,6 +43,8 @@ const nextConfig: NextConfig = {
       // and their transitive modules are present without copying all node_modules.
       ...remotionRuntimeTraceIncludes,
       "./.agents/skills/remotion-best-practices/**/*.md",
+      "./.agents/skills/hyperframes/SKILL.md",
+      "./.agents/skills/hyperframes/references/motion.md",
     ],
     "/api/internal/remotion-bundle-smoke": remotionRuntimeTraceIncludes,
   },
