@@ -1,0 +1,265 @@
+.settings-page,
+.account-page {
+  min-height: 100dvh;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at 78% 8%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 28rem),
+    var(--background);
+  padding: 0 max(24px, calc((100vw - 1180px) / 2)) 80px
+}
+
+.settings-topbar,
+.account-topbar {
+  min-height: 76px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border)
+}
+
+.account-back,
+.account-settings-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600
+}
+
+.account-back:hover,
+.account-settings-link:hover { color: var(--primary) }
+
+.settings-hero {
+  display: grid;
+  grid-template-columns: 1fr 250px;
+  align-items: end;
+  gap: 50px;
+  padding: 68px 0 40px
+}
+
+.settings-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--primary);
+  font: 600 12px/1 ui-monospace, monospace;
+  letter-spacing: .12em
+}
+
+.settings-hero h1 {
+  margin: 12px 0 14px;
+  font-size: clamp(42px, 6vw, 76px);
+  line-height: .96;
+  letter-spacing: -.065em;
+  font-weight: 580
+}
+
+.settings-hero h1 span { color: var(--primary) }
+.settings-hero p,
+.settings-section-head p { color: var(--muted-foreground); max-width: 650px; line-height: 1.65 }
+
+.credit-total {
+  min-height: 146px;
+  padding: 24px;
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border));
+  border-radius: 16px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary) 9%, var(--card)), var(--card));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between
+}
+
+.credit-total span { display: flex; align-items: center; gap: 8px; color: var(--muted-foreground); font-size: 13px }
+.credit-total strong { font-size: 48px; line-height: 1; letter-spacing: -.06em }
+
+.settings-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--card)
+}
+
+.settings-stats article { min-height: 126px; padding: 22px; display: grid; grid-template-columns: auto 1fr; gap: 12px; align-content: center; border-right: 1px solid var(--border) }
+.settings-stats article:last-child { border-right: 0 }
+.settings-stats article > svg { color: var(--primary) }
+.settings-stats article span { color: var(--muted-foreground); font-size: 12px }
+.settings-stats article strong,
+.settings-stats article a { grid-column: 2; font-size: 19px; font-weight: 620 }
+.settings-stats article a { display: inline-flex; align-items: center; gap: 6px; color: var(--foreground) }
+
+.plans-section,
+.activity-section { padding-top: 72px; scroll-margin-top: 20px }
+.settings-section-head > span { color: var(--primary); font: 600 11px/1 ui-monospace, monospace; letter-spacing: .14em }
+.settings-section-head h2 { margin: 9px 0 8px; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.045em; font-weight: 560 }
+.pricing-shell { margin-top: 30px; min-height: 180px }
+
+.billing-unavailable {
+  min-height: 180px;
+  padding: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--card))
+}
+
+.billing-unavailable > span {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent)
+}
+
+.billing-unavailable strong { display: block; margin: 2px 0 8px; font-size: 16px }
+.billing-unavailable p { max-width: 680px; color: var(--muted-foreground); line-height: 1.55; font-size: 13px }
+.billing-unavailable a { display: inline-flex; align-items: center; gap: 6px; margin-top: 15px; color: var(--primary); font-size: 13px; font-weight: 650 }
+
+.billing-unavailable {
+  min-height: 180px;
+  padding: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--card))
+}
+
+.billing-unavailable > span {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent)
+}
+
+.billing-unavailable strong { display: block; margin: 2px 0 8px; font-size: 16px }
+.billing-unavailable p { max-width: 680px; color: var(--muted-foreground); line-height: 1.55; font-size: 13px }
+.billing-unavailable a { display: inline-flex; align-items: center; gap: 6px; margin-top: 15px; color: var(--primary); font-size: 13px; font-weight: 650 }
+
+.billing-unavailable {
+  min-height: 180px;
+  padding: 28px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--primary) 4%, var(--card))
+}
+
+.billing-unavailable > span {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent)
+}
+
+.billing-unavailable strong { display: block; margin: 2px 0 8px; font-size: 16px }
+.billing-unavailable p { max-width: 680px; color: var(--muted-foreground); line-height: 1.55; font-size: 13px }
+.billing-unavailable a { display: inline-flex; align-items: center; gap: 6px; margin-top: 15px; color: var(--primary); font-size: 13px; font-weight: 650 }
+
+.activity-list { margin-top: 24px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden }
+.activity-list article { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto 80px; align-items: center; gap: 13px; padding: 16px 18px; border-bottom: 1px solid var(--border); background: var(--card) }
+.activity-list article:last-child { border-bottom: 0 }
+.activity-list article > div:nth-child(2) { display: grid; gap: 4px }
+.activity-list article strong { font-size: 14px }
+.activity-list article span,
+.activity-list article small { color: var(--muted-foreground); font-size: 12px }
+.activity-list article > b { font-size: 14px }
+.activity-list article > b.positive { color: #69c77c }
+.activity-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 9px; color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent) }
+.activity-icon.subscription { color: #69c77c; background: #69c77c18 }
+.activity-empty { margin-top: 24px; min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted-foreground) }
+.settings-error { color: var(--destructive); margin-bottom: 18px }
+
+.settings-single-route { max-width: 1500px; margin: 0 auto; padding: 0 44px 64px }
+.settings-main-header { min-height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border) }
+.settings-header-left,.settings-header-actions { display: flex; align-items: center; gap: 18px }
+.settings-header-divider { height: 24px; width: 1px; background: var(--border) }
+.settings-header-left > span:last-child { color: var(--muted-foreground); font-size: 13px }
+.settings-dashboard-shell { min-height: 660px; display: grid; grid-template-columns: 280px minmax(0,1fr); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 22px 70px #0003 }
+.settings-sidebar { display: flex; flex-direction: column; padding: 24px 16px; border-right: 1px solid var(--border); background: color-mix(in srgb,var(--background) 55%,var(--card)) }
+.settings-person { display: flex; align-items: center; gap: 12px; padding: 4px 8px 22px; border-bottom: 1px solid var(--border) }
+.settings-person > div:last-child { display: grid; min-width: 0; gap: 3px }
+.settings-person strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px }
+.settings-person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px }
+.settings-sidebar nav { display: grid; gap: 6px; padding-top: 20px }
+.settings-sidebar nav button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; text-align: left; border: 1px solid transparent; border-radius: 10px; color: var(--muted-foreground); transition: .15s ease }
+.settings-sidebar nav button:hover { background: color-mix(in srgb,var(--primary) 7%,transparent); color: var(--foreground) }
+.settings-sidebar nav button.active { color: var(--foreground); border-color: color-mix(in srgb,var(--primary) 28%,var(--border)); background: color-mix(in srgb,var(--primary) 10%,var(--card)); box-shadow: inset 3px 0 var(--primary) }
+.settings-sidebar nav button > svg { flex: none; color: var(--primary) }
+.settings-sidebar nav button > span { display: grid; gap: 3px }
+.settings-sidebar nav strong { font-size: 13px; font-weight: 650 }
+.settings-sidebar nav small { color: var(--muted-foreground); font-size: 11px }
+.settings-sidebar-credit { display: grid; gap: 10px; margin-top: auto; padding: 15px; border: 1px solid var(--border); border-radius: 11px; background: var(--card) }
+.settings-sidebar-credit span { display: flex; gap: 7px; align-items: center; color: var(--muted-foreground); font-size: 11px }
+.settings-sidebar-credit svg { color: var(--primary) }
+.settings-sidebar-credit strong { font-size: 25px; letter-spacing: -.04em }
+.settings-content { min-width: 0; padding: 30px 36px 40px }
+.settings-content-header { padding-bottom: 24px; border-bottom: 1px solid var(--border) }
+.settings-content-header > span,.billing-block-heading > div > span { color: var(--primary); font: 600 10px/1 ui-monospace,monospace; letter-spacing: .14em }
+.settings-content-header h2 { margin: 8px 0; font-size: 29px; letter-spacing: -.04em }
+.settings-content-header p { color: var(--muted-foreground); font-size: 13px }
+.settings-content-body { min-width: 0; padding-top: 24px }
+.embedded-clerk-profile { width: 100%; min-height: 460px }
+.embedded-clerk-profile [class*="cl-card"],.embedded-clerk-profile [class*="cl-rootBox"] { width: 100%; max-width: none }
+.embedded-clerk-profile [class*="cl-card"] { border: 0; box-shadow: none; background: transparent }
+.embedded-clerk-profile [class*="cl-navbar"] { border: 0; background: transparent }
+.billing-overview { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px }
+.billing-overview article { min-height: 116px; display: grid; align-content: center; gap: 8px; padding: 17px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb,var(--background) 45%,var(--card)) }
+.billing-overview article > svg { color: var(--primary); width: 17px; height: 17px }
+.billing-overview article > span { color: var(--muted-foreground); font-size: 11px }
+.billing-overview article > strong { font-size: 21px }
+.billing-overview .billing-credit-card { border-color: color-mix(in srgb,var(--primary) 30%,var(--border)); background: color-mix(in srgb,var(--primary) 7%,var(--card)) }
+.billing-credit-card > span { display: flex; gap: 7px; align-items: center; color: var(--muted-foreground); font-size: 11px }
+.billing-credit-card > span svg { color: var(--primary) }
+.billing-credit-card > strong { font-size: 30px; line-height: 1 }
+.billing-credit-card > small { color: var(--muted-foreground); font-size: 10px }
+.billing-block { margin-top: 32px }
+.billing-block-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px }
+.billing-block-heading h3 { margin-top: 6px; font-size: 20px; letter-spacing: -.03em }
+.billing-secure { display: flex; align-items: center; gap: 5px; color: var(--muted-foreground); font-size: 11px }
+.billing-panel .pricing-shell { margin-top: 14px }
+.billing-panel .billing-unavailable { min-height: 0; margin-top: 14px; padding: 20px }
+.billing-panel .activity-list { margin-top: 14px }
+
+.clerk-profile-shell { padding: 46px 0; display: flex; justify-content: center }
+.clerk-profile-shell > div { width: min(100%, 980px) }
+.account-loading { min-height: 300px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted-foreground) }
+
+@media (max-width: 760px) {
+  .settings-single-route { padding-inline: 16px }
+  .settings-dashboard-shell { grid-template-columns: 1fr }
+  .settings-sidebar { border-right: 0; border-bottom: 1px solid var(--border); padding: 16px }
+  .settings-sidebar nav { grid-template-columns: repeat(3,minmax(0,1fr)); padding-top: 12px }
+  .settings-sidebar nav button { flex-direction: column; align-items: flex-start; gap: 7px; padding: 10px 8px }
+  .settings-sidebar nav small { display: none }
+  .settings-sidebar-credit { display: none }
+  .settings-content { padding: 24px 18px }
+  .billing-overview { grid-template-columns: 1fr 1fr }
+  .billing-credit-card { grid-column: span 2 }
+  .settings-page,
+  .account-page { padding-inline: 20px }
+  .settings-hero { grid-template-columns: 1fr; padding-top: 42px; gap: 24px }
+  .settings-stats { grid-template-columns: 1fr }
+  .settings-stats article { border-right: 0; border-bottom: 1px solid var(--border) }
+  .settings-stats article:last-child { border-bottom: 0 }
+  .activity-list article { grid-template-columns: 38px 1fr auto }
+  .activity-list article small { display: none }
+}
