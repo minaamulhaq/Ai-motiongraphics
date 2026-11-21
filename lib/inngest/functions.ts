@@ -287,6 +287,7 @@ export const exportProjectVideo = inngest.createFunction({
   idempotency: "event.data.exportId",
   onFailure: async ({ event }) => {
     const { exportId, runId } = event.data.event.data;
+    console.error("Project export failed", { exportId, runId, error: event.data.error });
     await workerDatabase().from("project_video_exports").update({
       status: "failed", error: "The Lambda render failed. Click Export MP4 to start a new attempt.", updated_at: new Date().toISOString(),
     }).eq("id", exportId).eq("run_id", runId).in("status", ["queued", "rendering"]);

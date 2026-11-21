@@ -48,6 +48,7 @@ Artifact contract:
 - Import only from react, remotion, and the installed lucide-react icon library. Choose icons that match the meaning of each feature. Do not call registerRoot.
 - Create a multi-scene composition using Sequence. Keep useCurrentFrame() inside the smallest animated leaf components.
 - Read fps from useVideoConfig() for timing calculations. Drive every animation from frames using inline interpolate(), spring(), or Easing values.
+- Every interpolate inputRange must be strictly increasing after frame expressions are evaluated. Never repeat an endpoint (for example [600,630,630]). For zero-length holds, remove the duplicate input and its output together; keep the final value at that frame. Keep inputRange and outputRange lengths equal.
 - Do not use CSS animation or transition properties. Prefer scale, translate, and rotate style properties instead of transform strings.
 - Use Interactive.* wrappers with stable, descriptive names for editable visual elements.
 - Read every color and font from the theme prop. Use original HTML or SVG motion graphics with legible typography and safe video margins.
