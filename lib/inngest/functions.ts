@@ -172,6 +172,63 @@ export default function MotionVideo({theme}: {theme: MotionTheme}) {
 export const videoConfig = {width: ${width}, height: ${height}, fps: ${fps}, durationInFrames: ${durationInFrames}, defaultProps: {theme: defaultTheme}};
 `;
 }
+
+function buildVisualQualityFallback({prompt,theme,width,height,fps,durationInFrames}:{prompt:string;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
+  const requestedLabels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim());
+  const fallbackLabels=["IDEA","STORYBOARD","MOTION","PREVIEW","READY TO SHARE","From idea to motion."];
+  const scenes=fallbackLabels.map((fallback,index)=>({
+    start:Math.round(index*durationInFrames/fallbackLabels.length),
+    end:Math.round((index+1)*durationInFrames/fallbackLabels.length),
+    label:requestedLabels.find(label=>label.toLocaleLowerCase().replace(/[.!?]+$/g,"")===fallback.toLocaleLowerCase().replace(/[.!?]+$/g,""))||fallback,
+    mode:index,
+  }));
+  const total=Math.max(1,durationInFrames-1);
+  const config=JSON.stringify({width,height,fps,durationInFrames,colors:theme.colors,typography:theme.typography,scenes,total});
+  return `import React from "react";
+import {AbsoluteFill, Easing, Interactive, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig} from "remotion";
+const design=${config};
+function Scene({scene,index}:{scene:typeof design.scenes[number];index:number}){
+ const frame=useCurrentFrame(); const {fps}=useVideoConfig();
+ const span=Math.max(1,scene.end-scene.start); const p=interpolate(frame,[0,span],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"});
+ const enter=spring({frame,fps,config:{damping:18,stiffness:95,mass:0.8}});
+ const accent=design.colors.primary, violet=design.colors.secondary, fg=design.colors.foreground;
+ const label=scene.label;
+ return <AbsoluteFill style={{backgroundColor:design.colors.background,overflow:"hidden",fontFamily:design.typography.fontFamily,color:fg}}>
+  <Interactive.Div name="Ambient gradient" style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 78% 24%, "+accent+"42, transparent 42%), radial-gradient(ellipse at 20% 80%, "+violet+"28, transparent 48%)"}}/>
+  <Interactive.Div name="Orbit ring" style={{position:"absolute",left:"50%",top:"50%",width:"58vmin",height:"58vmin",border:"2px solid "+violet+"88",borderRadius:"50%",translate:"-50% -50%",rotate:(p*38+index*18)+"deg",scale:0.88+enter*0.12,opacity:0.58}}/>
+  <Interactive.Div name="Orbit ring inner" style={{position:"absolute",left:"50%",top:"50%",width:"39vmin",height:"39vmin",border:"1px solid "+accent+"99",borderRadius:"50%",translate:"-50% -50%",rotate:(-p*62-index*13)+"deg",scale:0.84+enter*0.16,opacity:0.72}}/>
+  {scene.mode===0&&<Interactive.Div name="Idea prompt capsule" style={{position:"absolute",left:"50%",top:"50%",translate:"-50% -50%",width:"min(54vw,860px)",height:"clamp(72px,10vw,128px)",border:"1px solid "+accent,borderRadius:24,background:"linear-gradient(110deg,#15131b,"+violet+"28)",boxShadow:"0 0 46px "+accent+"44",scale:0.86+0.14*enter,opacity:enter}}><div style={{position:"absolute",left:"7%",top:"50%",width:"9px",height:"9px",borderRadius:"50%",background:accent,translate:"0 -50%",boxShadow:"0 0 18px "+accent}}/><div style={{position:"absolute",left:"13%",top:"37%",width:"54%",height:10,borderRadius:8,background:fg,opacity:0.5}}/><div style={{position:"absolute",left:"13%",top:"57%",width:"34%",height:7,borderRadius:8,background:violet,opacity:0.75}}/></Interactive.Div>}
+  {scene.mode===1&&<Interactive.Div name="Storyboard panels" style={{position:"absolute",left:"50%",top:"50%",display:"flex",gap:18,translate:"-50% -50%",opacity:interpolate(frame,[0,Math.min(12,span)],[0.12,0.98],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),scale:0.8+0.2*enter}}>{[0,1,2].map((n)=><div key={n} style={{position:"relative",width:"17vmin",height:"11vmin",border:"1px solid "+accent+"99",borderRadius:14,background:"linear-gradient(145deg,"+violet+"44,"+accent+"30)",transform:"translateY("+(Math.sin(frame/13+n)*12)+"px)"}}><div style={{position:"absolute",left:"16%",right:"16%",top:"25%",height:"2px",background:fg,opacity:0.65}}/><div style={{position:"absolute",left:"16%",width:"45%",bottom:"24%",height:"20%",borderRadius:8,background:n%2?accent:violet}}/></div>)}</Interactive.Div>}
+  {scene.mode===3&&<Interactive.Div name="Composed motion preview" style={{position:"absolute",left:"50%",top:"50%",width:"min(52vw,820px)",height:"min(34vw,460px)",translate:"-50% -50%",border:"1px solid "+violet+"aa",borderRadius:22,background:"linear-gradient(135deg,#171520,"+accent+"20 55%,"+violet+"35)",boxShadow:"0 28px 90px #0009",scale:0.86+0.14*enter,opacity:enter}}><div style={{position:"absolute",width:"28%",aspectRatio:"1",borderRadius:"50%",left:"34%",top:"22%",background:"radial-gradient(circle at 35% 35%,"+fg+","+accent+" 36%,"+violet+" 68%,transparent 70%)",filter:"drop-shadow(0 0 30px "+accent+")",rotate:(frame*1.8)+"deg"}}/><div style={{position:"absolute",left:"18%",right:"18%",bottom:"18%",height:3,background:"linear-gradient(90deg,transparent,"+accent+","+violet+",transparent)"}}/></Interactive.Div>}
+  {scene.mode===4&&<Interactive.Div name="Ready video file tile" style={{position:"absolute",left:"50%",top:"48%",translate:"-50% -50%",width:"min(32vw,480px)",height:"min(21vw,280px)",border:"1px solid "+accent+"99",borderRadius:22,background:"linear-gradient(145deg,"+violet+"36,#121116)",boxShadow:"0 22px 70px #000a,0 0 38px "+accent+"28",scale:0.82+0.18*enter,opacity:enter}}><div style={{position:"absolute",left:"50%",top:"50%",translate:"-50% -50%",width:0,height:0,borderTop:"22px solid transparent",borderBottom:"22px solid transparent",borderLeft:"34px solid "+fg,filter:"drop-shadow(0 0 16px "+accent+")"}}/></Interactive.Div>}
+  <Interactive.Div name="Scene label" style={{position:"absolute",left:"50%",bottom:"13%",translate:"-50% 0",fontSize:"clamp(24px,4vw,52px)",fontWeight:design.typography.headingWeight,letterSpacing:scene.mode===5?"0.02em":"0.16em",textAlign:"center",opacity:interpolate(frame,[0,Math.min(10,span)],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),textShadow:"0 0 28px "+accent+"88"}}>{label}</Interactive.Div>
+  <Interactive.Div name="Animated progress stroke" style={{position:"absolute",left:"12%",bottom:"8%",height:4,width:"76%",transformOrigin:"left",scaleX:p,background:"linear-gradient(90deg,"+accent+","+violet+")"}}/>
+ </AbsoluteFill>;
+}
+export default function MotionVideo(){return <AbsoluteFill>{design.scenes.map((scene,index)=><Sequence key={index} from={scene.start} durationInFrames={scene.end-scene.start}><Scene scene={scene} index={index}/></Sequence>)}</AbsoluteFill>}
+export const videoConfig={width:design.width,height:design.height,fps:design.fps,durationInFrames:design.durationInFrames};
+`;
+}
+
+function assessVisualComposition(code:string,prompt:string,brief:ReturnType<typeof briefSchema.parse>){
+  const issues:string[]=[];
+  const labels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim()).filter(label=>label.length>1);
+  const distinctScenes=(code.match(/<Sequence\b/g)||[]).length;
+  if(distinctScenes<Math.min(5,Math.max(3,brief.scenes.length)))issues.push("Implement each story beat as its own timed scene; do not collapse this multi-stage brief into a single card or background.");
+  if((code.match(/<Interactive\./g)||[]).length<8||!/(?:radial-gradient|linear-gradient|<svg|<path|borderRadius|border:|<canvas|polygon|clipPath)/i.test(code))issues.push("The visual layer needs multiple deliberate designed shapes, depth, and composed graphics beyond a flat fill.");
+  if(!/(?:interpolate|spring)\s*\(/.test(code))issues.push("Add visible frame-driven animation to key visual elements.");
+  let lastLabelPosition=-1;
+  const labelsOutOfOrder=labels.some(label=>{
+    const position=code.toLocaleLowerCase().indexOf(label.toLocaleLowerCase());
+    if(position<0||position<=lastLabelPosition)return true;
+    lastLabelPosition=position;
+    return false;
+  });
+  if(labels.length>=2&&labelsOutOfOrder){
+    issues.push("Include all exact audience-facing labels requested by the user, in the requested order, and keep prompt instructions off screen.");
+  }
+  return issues;
+}
 export const generateMotion = inngest.createFunction({
   id:"generate-motion-composition",
   retries:2,
@@ -248,7 +305,7 @@ export const generateMotion = inngest.createFunction({
   const code=await step.run("generate-remotion-composition",async()=>{
     await update("generating_composition",55);
     const searchComposition=buildSearchFeatureComposition({brief,theme,width,height,fps,durationInFrames});
-    if(searchComposition)return searchComposition;
+    if(searchComposition&&/\b(search|searching|search bar|search field|search engine|chatxify)\b/i.test(project.prompt))return searchComposition;
     const skill=await loadRemotionCompositionSkill();
     try{
       return await generateText(
@@ -263,14 +320,22 @@ export const generateMotion = inngest.createFunction({
   await step.run("validate-and-save",async()=>{
     await update("validating",90);
     let validatedCode=code;
-    let problems=validateComposition(validatedCode);
+    let problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
     if(problems.length){
       console.warn("Generated composition requires repair:",problems);
-      validatedCode=await generateText(
-        remotionCompositionSystemPrompt(await loadRemotionCompositionSkill()),
-        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
-          previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
-      problems=validateComposition(validatedCode);
+      try{
+        validatedCode=await generateText(
+          remotionCompositionSystemPrompt(await loadRemotionCompositionSkill()),
+          JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
+            previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
+      }catch(error){
+        console.warn("AI composition repair unavailable; using visual fallback.",error instanceof Error?error.message:"Unknown provider error");
+      }
+      problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
+      if(problems.length){
+        validatedCode=buildVisualQualityFallback({prompt:project.prompt,theme,width,height,fps,durationInFrames});
+        problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt,brief)];
+      }
     }
     if(problems.length)throw new Error("Composition type validation failed: "+problems.join("; "));
     const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode});
