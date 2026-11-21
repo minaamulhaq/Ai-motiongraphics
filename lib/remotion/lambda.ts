@@ -3,6 +3,8 @@ import { bundle } from "@remotion/bundler";
 import { deleteSite } from "@remotion/lambda";
 import { getRenderProgress, presignUrl, renderMediaOnLambdaAndStream } from "@remotion/lambda/client";
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { deploySiteFromBundle } from "@remotion/lambda";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -41,6 +43,34 @@ export function readCompositionConfig(source: string) {
   return { width: width!, height: height!, fps: fps!, durationInFrames: durationInFrames! };
 }
 
+function logBundlerResolutionDiagnostics(entryPoint: string) {
+  const localRequire = createRequire(join(process.cwd(), "package.json"));
+  const effectsManifestPath = join(process.cwd(), "node_modules/@remotion/effects/package.json");
+  let effectsManifest: {version?:string;exports?:Record<string,unknown>} | null = null;
+  try { effectsManifest = JSON.parse(readFileSync(effectsManifestPath,"utf8")); } catch {}
+  let effectsManifestResolved: string | null = null;
+  let effectsSubpathResolved: string | null = null;
+  let remotionEntryResolved: string | null = null;
+  let packageJsonResolveError: string | null = null;
+  try { effectsManifestResolved = localRequire.resolve("@remotion/effects/package.json"); }
+  catch (error) { packageJsonResolveError = error instanceof Error ? error.message : String(error); }
+  try { effectsSubpathResolved = localRequire.resolve("@remotion/effects/brightness/preview"); }
+  catch (error) { effectsSubpathResolved = `unresolved under CommonJS conditions: ${error instanceof Error ? error.message : String(error)}`; }
+  try { remotionEntryResolved = localRequire.resolve("@remotion/studio/renderEntry"); }
+  catch (error) { remotionEntryResolved = `unresolved: ${error instanceof Error ? error.message : String(error)}`; }
+  const wildcardExport = effectsManifest?.exports?.["./*/preview"] as Record<string,string> | undefined;
+  const targetRelative = wildcardExport?.import?.replace("*","brightness") ?? null;
+  const targetAbsolute = targetRelative ? join(process.cwd(),"node_modules/@remotion/effects",targetRelative) : null;
+  console.info("Remotion Lambda bundler resolution diagnostics",{
+    cwd:process.cwd(),node:process.version,vercelCommitSha:process.env.VERCEL_GIT_COMMIT_SHA??null,
+    vercelEnvironment:process.env.VERCEL_ENV??null,entryPoint,remotionBundlerEntry:remotionEntryResolved,
+    effectsManifestPath,effectsManifestResolved,packageJsonResolveError,
+    effectsVersion:effectsManifest?.version??null,
+    brightnessPreviewExport:wildcardExport??null,targetRelative,targetAbsolute,
+    targetExists:targetAbsolute?existsSync(targetAbsolute):false,effectsSubpathResolved,
+  });
+}
+
 export async function renderProjectOnLambda({ source, projectId, title, theme, onInit, onProgress }: {
   source: string; projectId: string; title: string; theme: unknown;
   onInit?: (renderId: string, bucketName: string) => Promise<void>;
@@ -71,15 +101,27 @@ export async function renderProjectOnLambda({ source, projectId, title, theme, o
     await writeFile(join(generatedDir, "export-settings.ts"), settingsSource, { encoding: "utf8", flag: "wx" });
     await writeFile(entryPoint, indexTemplate, { encoding: "utf8", flag: "wx" });
 
+    logBundlerResolutionDiagnostics(entryPoint);
     const bundleDir = await bundle({
       entryPoint, outDir: join(tempRoot, "bundle"), enableCaching: false,
       rootDir: process.cwd(), publicDir: join(process.cwd(), "public"),
-      // Temporary sources live outside the app's node_modules ancestry.
-      webpackOverride: (config) => ({ ...config, resolve: {
-        ...config.resolve,
-        modules: [join(process.cwd(), "node_modules"), ...(config.resolve?.modules ?? ["node_modules"])],
-      } }),
+      // Temporary sources live outside the app's node_modules ancestry. Log
+      // Webpack's actual export conditions and lookup paths for this run.
+      webpackOverride: (config) => {
+        console.info("Remotion Webpack resolve context",{
+          context:config.context,entry:config.entry,
+          resolve:{modules:config.resolve?.modules,conditionNames:config.resolve?.conditionNames,
+            mainFields:config.resolve?.mainFields,extensions:config.resolve?.extensions,
+            exportsFields:config.resolve?.exportsFields,aliasFields:config.resolve?.aliasFields},
+        });
+        return {...config,resolve:{...config.resolve,
+          modules:[join(process.cwd(),"node_modules"),...(config.resolve?.modules??["node_modules"])],
+        }};
+      },
     });
+    if(process.env.REMOTION_BUNDLER_DIAGNOSTICS_ONLY==="1"){
+      throw new Error("Remotion diagnostics-only mode: bundle completed; Lambda deployment and rendering were skipped.");
+    }
     const siteName = `aivid-${projectId}-${randomUUID()}`;
     const site = await deploySiteFromBundle({
       region: aws.region,
