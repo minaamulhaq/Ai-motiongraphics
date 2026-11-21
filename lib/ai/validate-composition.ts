@@ -16,11 +16,22 @@ export function validateComposition(code:string):string[] {
   }
   if(!hasDefault||!hasConfig||!code.includes("theme")||!code.includes("colors")||!code.includes("typography"))return ["Export a default MotionVideo component and named videoConfig. Read colors and typography from theme."];
   if(!code.includes("useCurrentFrame")||!code.includes("useVideoConfig")||!code.includes("Sequence")||(!code.includes("interpolate")&&!code.includes("spring")))return ["Use Sequence and frame-driven Remotion APIs with timing from useVideoConfig()."];
-  const options:ts.CompilerOptions={noEmit:true,strict:true,skipLibCheck:true,esModuleInterop:true,jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,moduleResolution:ts.ModuleResolutionKind.Bundler,target:ts.ScriptTarget.ES2020};
-  const host=ts.createCompilerHost(options),originalGet=host.getSourceFile.bind(host);
-  const normalize=(name:string)=>path.resolve(name).replaceAll("\\","/").toLowerCase();
-  host.getSourceFile=(name,language,...rest)=>normalize(name)===normalize(file)?parsed:originalGet(name,language,...rest);
-  const program=ts.createProgram([file],options,host);
-  return ts.getPreEmitDiagnostics(program).filter(d=>d.category===ts.DiagnosticCategory.Error).slice(0,12).map(d=>ts.flattenDiagnosticMessageText(d.messageText," "));
+  // Composition source is generated dynamically and typechecked on the server.
+  // Running createProgram here resolves every dependency's declaration files,
+  // which serverless output tracing may omit (notably Remotion's .d.ts files).
+  // TranspileModule validates TS/TSX syntax without resolving imports; imports
+  // are validated separately by the allowlist above and by the preview bundler.
+  const result=ts.transpileModule(code,{
+    fileName:file,
+    reportDiagnostics:true,
+    compilerOptions:{
+      strict:true,
+      esModuleInterop:true,
+      jsx:ts.JsxEmit.ReactJSX,
+      module:ts.ModuleKind.ESNext,
+      target:ts.ScriptTarget.ES2020,
+    },
+  });
+  return (result.diagnostics??[]).filter(d=>d.category===ts.DiagnosticCategory.Error).slice(0,12).map(d=>ts.flattenDiagnosticMessageText(d.messageText," "));
 }
 
