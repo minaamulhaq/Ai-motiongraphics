@@ -21,7 +21,7 @@ export async function generateText(system: string, prompt: string, json = false)
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST", headers: { "Authorization": "Bearer " + openai, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: json ? 7000 : 16000, ...(json ? { response_format: { type: "json_object" } } : {}) }),
+      body: JSON.stringify({ model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }], max_tokens: json ? 7000 : 16384, ...(json ? { response_format: { type: "json_object" } } : {}) }),
       signal: AbortSignal.timeout(240000)
     });
     if (response.status === 401) throw new NonRetriableError("OpenAI rejected OPENAI_API_KEY (HTTP 401). Replace the key in Vercel Production environment variables with a valid direct OpenAI API key, then redeploy.");
