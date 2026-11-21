@@ -2,7 +2,7 @@ import { validateComposition } from "@/lib/ai/validate-composition";
 import { generateStructured } from "@/lib/ai/structured";
 import { inngest } from "./client";
 import { workerDatabase } from "@/lib/supabase/worker";
-import { themeSchema, generateText } from "@/lib/ai/generate";
+import { themeSchema, briefSchema, generateText } from "@/lib/ai/generate";
 import { loadHyperframesMotionGuidance, loadRemotionCompositionSkill, remotionCompositionSystemPrompt, videoPromptRefinementSystemPrompt } from "@/lib/remotion/skill";
 import { readCompositionConfig, renderProjectOnLambda } from "@/lib/remotion/lambda";
 import { resolveMotionTheme } from "@/lib/motion-theme";
@@ -131,7 +131,7 @@ export const generateMotion = inngest.createFunction({
   const fps=30,durationInFrames=project.seconds*fps;
   const [rw,rh]=project.ratio.split(":").map(Number);
   const width=rw>rh?1920:1080,height=Math.round(width*rh/rw);
-  const {refinedPrompt,theme}=await step.run("refine-video-prompt-and-theme",async()=>{
+  const {refinedPrompt,theme,plan}=await step.run("refine-video-prompt-and-theme",async()=>{
     await update("generating_theme",35);
     const saved=themeSchema.safeParse(project.theme_config);
     let result:ReturnType<typeof themeSchema.parse>;
@@ -158,8 +158,45 @@ export const generateMotion = inngest.createFunction({
       console.warn("AI prompt refinement unavailable; using a production-ready prompt wrapper.",error instanceof Error?error.message:"Unknown provider error");
       productionPrompt=fallbackVideoPrompt(project.prompt,{width,height,fps,durationInFrames});
     }
-    await update("generating_prompt",60,{brief:{refinedPrompt:productionPrompt}});
-    return {refinedPrompt:productionPrompt,theme:result};
+
+    // Generate a structured, timed storyboard scene plan
+    let scenePlan: import("zod").infer<typeof briefSchema>;
+    try {
+      scenePlan = await generateStructured(
+        "scene planner",
+        briefSchema,
+        `You are a senior motion-graphics director. Break down the user's brief into a precise sequential storyboard plan with exact frame timestamps.
+Total duration: ${durationInFrames} frames (${project.seconds} seconds at ${fps} fps).
+Create 3 to 5 clear scenes across the timeline from frame 0 to frame ${durationInFrames}:
+- Scene 1: Clear opening entrance
+- Scene 2: Core action / development
+- Scene 3: Feature reveal or visual payoff
+- Scene 4: Resolved ending and final hold
+Ensure scenes are strictly contiguous (each scene's startFrame equals the previous scene's endFrame), ending at exactly ${durationInFrames}.`,
+        instructions => generateText(instructions, JSON.stringify({
+          userPrompt: project.prompt,
+          refinedPrompt: productionPrompt,
+          video: { durationInFrames, fps, seconds: project.seconds, width, height },
+          theme: result,
+        }), true)
+      );
+    } catch(e) {
+      console.warn("Structured scene plan fallback:", e instanceof Error ? e.message : "Error");
+      const numScenes = 3;
+      const sceneLen = Math.floor(durationInFrames / numScenes);
+      scenePlan = {
+        title: project.prompt.slice(0, 80),
+        direction: "Kinetic motion graphics demonstration",
+        scenes: [
+          { headline: "Opening", description: "Scene introduces the main theme with centered animated entrance.", startFrame: 0, endFrame: sceneLen },
+          { headline: "Action", description: "Core kinetic demonstration with active elements and smooth transforms.", startFrame: sceneLen, endFrame: sceneLen * 2 },
+          { headline: "Outcome", description: "Final reveal and polished ending showcase.", startFrame: sceneLen * 2, endFrame: durationInFrames }
+        ]
+      };
+    }
+
+    await update("generating_prompt",60,{brief:{refinedPrompt:productionPrompt,storyboard:scenePlan}});
+    return {refinedPrompt:productionPrompt,theme:result,plan:scenePlan};
   });
   const code=await step.run("generate-remotion-composition",async()=>{
     await update("generating_composition",55);
@@ -168,8 +205,18 @@ export const generateMotion = inngest.createFunction({
     try{
       return await generateText(
         remotionCompositionSystemPrompt(skill,hyperframesMotionGuidance),
-        JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
-          requirement:"Treat refinedProductionPrompt as the primary creative direction. Cross-check originalPrompt to preserve user intent, exact permitted on-screen text, and prohibitions. Build distinct timed, visibly animated scenes for the full duration. Do not produce a background-only composition, generic template, long blank hold, lone decorative dot, or flat full-frame color."}));
+        JSON.stringify({
+          originalPrompt:project.prompt,
+          refinedProductionPrompt:refinedPrompt,
+          storyboardPlan:plan.scenes,
+          theme,
+          width,
+          height,
+          fps,
+          durationInFrames,
+          requirement:"Follow the storyboardPlan closely: implement each planned scene as its own timed <Sequence from={startFrame} durationInFrames={endFrame - startFrame}> with its own clean React component. Center all layouts using flexbox. Do not scatter elements or overlap arbitrarily. Ensure smooth spring transitions between scenes."
+        })
+      );
     }catch(error){
       console.error("AI composition draft unavailable",error);
       throw error;
