@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
       // lib files and React declarations are loaded dynamically and otherwise
       // omitted from Vercel's trace for this route.
       "./node_modules/typescript/lib/**/*",
+      // Generated TSX imports Remotion directly. Keep its shipped declaration
+      // files in the serverless trace for the runtime TypeScript compiler.
+      "./node_modules/remotion/**/*",
       "./node_modules/@types/react/**/*",
       "./node_modules/@types/prop-types/**/*",
       "./node_modules/csstype/**/*",
