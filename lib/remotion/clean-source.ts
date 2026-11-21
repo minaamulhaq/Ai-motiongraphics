@@ -9,7 +9,28 @@ export function cleanCompositionSource(source: string) {
   // Repair collapsed keyframes at runtime too: generated frame expressions
   // can evaluate to duplicate values even when their source looks different.
   for (const statement of file.statements) {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== "remotion") continue;
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    
+    // Repair lucide-react imports: AI sometimes prefixes icons with "Icon" (e.g. IconSearch -> Search as IconSearch)
+    if (statement.moduleSpecifier.text === "lucide-react") {
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const item of bindings.elements) {
+          const importedName = (item.propertyName ?? item.name).text;
+          if (/^Icon[A-Z]/.test(importedName)) {
+            const stripped = importedName.slice(4);
+            if (item.propertyName) {
+              edits.push({ start: item.propertyName.getStart(file), end: item.propertyName.end, text: stripped });
+            } else {
+              edits.push({ start: item.getStart(file), end: item.end, text: `${stripped} as ${importedName}` });
+            }
+          }
+        }
+      }
+      continue;
+    }
+
+    if (statement.moduleSpecifier.text !== "remotion") continue;
     const bindings = statement.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const item of bindings.elements) {

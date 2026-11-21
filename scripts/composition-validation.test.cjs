@@ -26,6 +26,16 @@ const lambdaModule = { exports: {} };
 new Function("exports", "ts", lambdaCompiled)(lambdaModule.exports, ts);
 const { readCompositionConfig } = lambdaModule.exports;
 
+// Transpile and load cleanCompositionSource from lib/remotion/clean-source.ts
+const cleanSourceCode = fs.readFileSync(path.join(__dirname, "../lib/remotion/clean-source.ts"), "utf8")
+  .replace(/^import .*;\r?\n/gm, "");
+const cleanSourceCompiled = ts.transpileModule(cleanSourceCode, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const cleanSourceModule = { exports: {} };
+new Function("exports", "ts", cleanSourceCompiled)(cleanSourceModule.exports, ts);
+const { cleanCompositionSource } = cleanSourceModule.exports;
+
 describe("Composition technical and non-blocking validation", () => {
   const validTheme = {
     colors: { background: "#111111", foreground: "#ffffff", primary: "#ff6b2c", secondary: "#b8b8c0" },
@@ -187,5 +197,30 @@ export default function MotionVideo() {
 
     assert.equal(attemptsCount, 1, "Should exit repair loop as soon as code is valid");
     assert.deepEqual(validateComposition(code), []);
+  });
+
+  test("cleanCompositionSource automatically aliases IconX lucide imports to real exports", () => {
+    const rawAiCode = `import React from "react";
+import { AbsoluteFill } from "remotion";
+import { IconSearch, IconMessageCircle, IconSparkles, IconClapperboard } from "lucide-react";
+
+export const videoConfig = { width: 1920, height: 1080, fps: 30, durationInFrames: 60 };
+export default function Video() {
+  return (
+    <AbsoluteFill>
+      <IconSearch size={20} />
+      <IconMessageCircle size={20} />
+      <IconSparkles size={20} />
+      <IconClapperboard size={20} />
+    </AbsoluteFill>
+  );
+}`;
+
+    const cleaned = cleanCompositionSource(rawAiCode);
+    assert.ok(cleaned.includes("Search as IconSearch"), "Should alias Search as IconSearch");
+    assert.ok(cleaned.includes("MessageCircle as IconMessageCircle"), "Should alias MessageCircle as IconMessageCircle");
+    assert.ok(cleaned.includes("Sparkles as IconSparkles"), "Should alias Sparkles as IconSparkles");
+    assert.ok(cleaned.includes("Clapperboard as IconClapperboard"), "Should alias Clapperboard as IconClapperboard");
+    assert.deepEqual(validateComposition(cleaned), [], "Cleaned code must pass TSX transpilation");
   });
 });
