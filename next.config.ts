@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       "./node_modules/lucide-react/**/*",
     ],
     "/api/inngest": [
+      // Remotion's bundler resolves Mediabunny's conditional package exports
+      // while packaging a render. Include the complete dist targets in Vercel.
+      "./node_modules/mediabunny/**/*",
       "./node_modules/@remotion/studio/**/*",
       "./node_modules/@remotion/studio-shared/**/*",
       "./node_modules/@remotion/studio-protocol/**/*",
