@@ -14,26 +14,30 @@ export const briefSchema=z.object({
 export async function generateText(system:string,prompt:string,json=false) {
   const router=process.env.OPENROUTER_API_KEY, openai=process.env.OPENAI_API_KEY;
   if(!router&&!openai)throw new Error("Configure OPENROUTER_API_KEY or OPENAI_API_KEY.");
-  const configuredRouterModel=process.env.OPENROUTER_MODEL;
-  // Gemini 3.1 Pro Preview can reject a request before execution when its
-  // reservation exceeds the key's current limit. Use the confirmed working
-  // alternate for that value as well as for a missing model setting.
-  const routerModel=!configuredRouterModel
-    || configuredRouterModel==="google/gemini-3.1-pro-preview"
-    || configuredRouterModel==="openai/gpt-4.1-mini"
-    || configuredRouterModel==="openrouter/free"
-    ? "baidu/ernie-5.5-flash-preview:free"
-    : configuredRouterModel;
+  const routerModel=process.env.OPENROUTER_MODEL||"baidu/ernie-5.5-flash-preview:free";
+  const model=router?routerModel:(process.env.OPENAI_MODEL||"gpt-4.1");
+  for(let attempt=0;attempt<2;attempt++){
   const response=await fetch(router?"https://openrouter.ai/api/v1/chat/completions":"https://api.openai.com/v1/chat/completions",{
     method:"POST",headers:{"Authorization":"Bearer "+(router||openai),"Content-Type":"application/json"},
-    body:JSON.stringify({model:router?routerModel:(process.env.OPENAI_MODEL||"gpt-4.1"),messages:[{role:"system",content:system},{role:"user",content:prompt}],max_tokens:json?7000:12000,...(json?{response_format:{type:"json_object"}}:{})}),
+    body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:prompt}],max_tokens:json?7000:12000,...(json?{response_format:{type:"json_object"}}:{})}),
     signal:AbortSignal.timeout(240000)
   });
   if(response.status===402)throw new NonRetriableError("OpenRouter credits or key spending limit cannot cover this request.");
   if(!response.ok)throw new Error("AI provider request failed (HTTP "+response.status+").");
   const data=await response.json();
   if(data.error)throw new Error("AI provider could not complete the generation.");
-  const text=data.choices?.[0]?.message?.content;
-  if(typeof text!=="string"||!text.trim())throw new Error("AI provider returned an empty response.");
+  const choice=data.choices?.[0];
+  if(choice?.message?.refusal||choice?.finish_reason==="content_filter")throw new NonRetriableError("AI provider declined this generation request.");
+  const content=choice?.message?.content;
+  const text=typeof content==="string"?content:Array.isArray(content)
+    ? content.filter((part: {type?:string;text?:unknown})=>part.type==="text"&&typeof part.text==="string").map((part:{text:string})=>part.text).join("") : "";
+  if(!text.trim()){
+    console.warn("AI provider returned no output text",{model,attempt:attempt+1,finishReason:choice?.finish_reason??null,completionTokens:data.usage?.completion_tokens??null});
+    if(attempt===0){await new Promise(resolve=>setTimeout(resolve,1000));continue;}
+    throw new Error("AI provider returned an empty response after two attempts. Model: "+model+"; finish reason: "+(choice?.finish_reason||"missing")+".");
+  }
+  if(choice?.finish_reason==="length")throw new Error("AI provider output reached its token limit. Request a shorter composition or increase the output budget.");
   return text.trim().replace(/^\`\`\`(?:json|tsx|typescript)?\s*/,"").replace(/\s*\`\`\`$/,"");
+  }
+  throw new Error("AI provider returned no usable output.");
 }

@@ -32,7 +32,7 @@ export default function StudioHome() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [panel, setPanel] = useState<Panel>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
-  const [prompt, setPrompt] = useState(""), [seconds, setSeconds] = useState(5), [ratio, setRatio] = useState("16:9");
+  const [prompt, setPrompt] = useState(""), [seconds, setSeconds] = useState(20), [ratio, setRatio] = useState("16:9");
   const [hero, setHero] = useState<Project | null>(null);
   const [clip, setClip] = useState<Project | null>(null), [draft, setDraft] = useState(false), [shared, setShared] = useState(false), [sent, setSent] = useState(false), [notice, setNotice] = useState("");
   const [playing, setPlaying] = useState(false), [playKey, setPlayKey] = useState(0);

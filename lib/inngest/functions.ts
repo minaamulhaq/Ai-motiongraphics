@@ -244,7 +244,8 @@ export const generateMotion = inngest.createFunction({
     try{
       return await generateText(
         remotionCompositionSystemPrompt(skill),
-        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames}));
+        JSON.stringify({originalPrompt:project.prompt,brief,theme,width,height,fps,durationInFrames,
+          requirement:"Build distinct timed, visibly animated scenes for the full duration following the original prompt. Include the labels and closing copy requested by that prompt. Do not produce a background-only composition."}));
     }catch(error){
       console.error("AI composition draft unavailable",error);
       throw error;
