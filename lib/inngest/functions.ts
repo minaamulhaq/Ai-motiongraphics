@@ -4,10 +4,24 @@ import { inngest } from "./client";
 import { workerDatabase } from "@/lib/supabase/worker";
 import { themeSchema, generateText } from "@/lib/ai/generate";
 import { loadHyperframesMotionGuidance, loadRemotionCompositionSkill, remotionCompositionSystemPrompt, videoPromptRefinementSystemPrompt } from "@/lib/remotion/skill";
-import { renderProjectOnLambda } from "@/lib/remotion/lambda";
+import { readCompositionConfig, renderProjectOnLambda } from "@/lib/remotion/lambda";
 import { resolveMotionTheme } from "@/lib/motion-theme";
 import { NonRetriableError } from "inngest";
 import { generationIdentity } from "./job-identity";
+
+export function validateTechnicalComposition(code: string): string[] {
+  const issues = [...validateComposition(code)];
+  if (issues.length) return issues;
+  try {
+    readCompositionConfig(code);
+  } catch (error) {
+    issues.push(error instanceof Error ? error.message : "Invalid videoConfig settings.");
+  }
+  if (!/export\s+default\s+/m.test(code)) {
+    issues.push("Composition must include a default export component for Remotion.");
+  }
+  return issues;
+}
 
 function fallbackTheme(project: {art:string;theme_config:unknown}){
   const resolved=resolveMotionTheme(project.theme_config,project.art);
@@ -16,8 +30,9 @@ function fallbackTheme(project: {art:string;theme_config:unknown}){
 function fallbackVideoPrompt(prompt:string,{width,height,fps,durationInFrames}:{width:number;height:number;fps:number;durationInFrames:number}){
   return `Create a polished ${Math.round(durationInFrames/fps)}-second ${width>=height?"landscape":"portrait"} motion-graphics video based on the user's brief below. Make the requested subject and intent immediately clear. Build a visually distinct opening, development, payoff, and resolved ending across the full runtime. Turn the key idea into concrete visible actions: designed objects enter, move with purpose, transform, assemble, interact, and settle into a finished composition. Use a composed, continuously engaging frame with clear focal hierarchy, layered depth, strong contrast, and smooth transitions. Use the supplied saved theme consistently; do not hold on a blank screen, a lone dot, a static card, or a flat full-frame color. Show only audience-facing copy specifically requested in the brief, preserving its exact wording and order. Never display the full prompt or production instructions. End with a clean, intentional final hold.\n\nUSER'S ORIGINAL BRIEF (reference only; never display it verbatim):\n${prompt}`;
 }
-function buildVisualQualityFallback({prompt,theme,width,height,fps,durationInFrames}:{prompt:string;theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
-  const requestedLabels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim());
+export function buildSafeComposition({prompt,brief,theme,width,height,fps,durationInFrames}:{prompt?:string;brief?:{title?:string;scenes?:{description?:string}[]};theme:ReturnType<typeof themeSchema.parse>;width:number;height:number;fps:number;durationInFrames:number}){
+  const effectivePrompt=prompt||brief?.title||(brief?.scenes?.map(s=>s.description).join(" "))||"";
+  const requestedLabels=[...effectivePrompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim());
   const fallbackLabels=["IDEA","STORYBOARD","MOTION","PREVIEW","READY TO SHARE","From idea to motion."];
   const scenes=fallbackLabels.map((fallback,index)=>({
     start:Math.round(index*durationInFrames/fallbackLabels.length),
@@ -48,15 +63,18 @@ function Scene({scene,index,theme}:{scene:typeof design.scenes[number];index:num
   {scene.mode===3&&<Interactive.Div name="Composed motion preview" style={{position:"absolute",left:"50%",top:"50%",width:"min(52vw,820px)",height:"min(34vw,460px)",translate:"-50% -50%",border:"1px solid "+violet+"aa",borderRadius:22,background:"linear-gradient(135deg,#171520,"+accent+"20 55%,"+violet+"35)",boxShadow:"0 28px 90px #0009",scale:0.86+0.14*enter,opacity:enter}}><div style={{position:"absolute",width:"28%",aspectRatio:"1",borderRadius:"50%",left:"34%",top:"22%",background:"radial-gradient(circle at 35% 35%,"+fg+","+accent+" 36%,"+violet+" 68%,transparent 70%)",filter:"drop-shadow(0 0 30px "+accent+")",rotate:(frame*1.8)+"deg"}}/><div style={{position:"absolute",left:"18%",right:"18%",bottom:"18%",height:3,background:"linear-gradient(90deg,transparent,"+accent+","+violet+",transparent)"}}/></Interactive.Div>}
   {scene.mode===4&&<Interactive.Div name="Ready video file tile" style={{position:"absolute",left:"50%",top:"48%",translate:"-50% -50%",width:"min(32vw,480px)",height:"min(21vw,280px)",border:"1px solid "+accent+"99",borderRadius:22,background:"linear-gradient(145deg,"+violet+"36,#121116)",boxShadow:"0 22px 70px #000a,0 0 38px "+accent+"28",scale:0.82+0.18*enter,opacity:enter}}><div style={{position:"absolute",left:"50%",top:"50%",translate:"-50% -50%",width:0,height:0,borderTop:"22px solid transparent",borderBottom:"22px solid transparent",borderLeft:"34px solid "+fg,filter:"drop-shadow(0 0 16px "+accent+")"}}/></Interactive.Div>}
   <Interactive.Div name="Scene label" style={{position:"absolute",left:"50%",bottom:"13%",translate:"-50% 0",fontSize:"clamp(24px,4vw,52px)",fontWeight:theme.typography.headingWeight,letterSpacing:scene.mode===5?"0.02em":"0.16em",textAlign:"center",opacity:interpolate(frame,[0,Math.min(10,span)],[0,1],{extrapolateLeft:"clamp",extrapolateRight:"clamp"}),textShadow:"0 0 28px "+accent+"88"}}>{label}</Interactive.Div>
-  <Interactive.Div name="Animated progress stroke" style={{position:"absolute",left:"12%",bottom:"8%",height:4,width:"76%",transformOrigin:"left",scaleX:p,background:"linear-gradient(90deg,"+accent+","+violet+")"}}/>
+  <Interactive.Div name="Animated progress stroke" style={{position:"absolute",left:"12%",bottom:"8%",height:4,width:"76%",transformOrigin:"left",transform:"scaleX("+p+")",background:"linear-gradient(90deg,"+accent+","+violet+")"}}/>
  </AbsoluteFill>;
 }
-export default function MotionVideo({theme}:{theme:MotionTheme}){return <AbsoluteFill>{${sequenceMarkup}}</AbsoluteFill>}
+export default function MotionVideo({theme}:{theme:MotionTheme}){return <AbsoluteFill>${sequenceMarkup}</AbsoluteFill>}
 export const videoConfig={width:design.width,height:design.height,fps:design.fps,durationInFrames:design.durationInFrames,defaultProps:{theme:defaultTheme}};
 `;
 }
+export function buildVisualQualityFallback(args: Parameters<typeof buildSafeComposition>[0]){
+  return buildSafeComposition(args);
+}
 
-function assessVisualComposition(code:string,prompt:string){
+export function assessVisualComposition(code:string,prompt:string){
   const issues:string[]=[];
   const labels=[...prompt.matchAll(/[“"]([^”"]{1,80})[”"]/g)].map(match=>match[1].trim()).filter(label=>label.length>1);
   const distinctScenes=(code.match(/<Sequence\b/g)||[]).length;
@@ -160,24 +178,51 @@ export const generateMotion = inngest.createFunction({
   await step.run("validate-and-save",async()=>{
     await update("validating",90);
     let validatedCode=code;
-    let problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
-    if(problems.length){
-      console.warn("Generated composition requires repair:",problems);
-      try{
-        validatedCode=await generateText(
-          remotionCompositionSystemPrompt(await loadRemotionCompositionSkill(),await loadHyperframesMotionGuidance()),
-          JSON.stringify({originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
-            previousSource:code,validationErrors:problems,instruction:"Repair the composition while preserving the requested visual scenes and motion. Return complete TSX source only."}));
-      }catch(error){
-        console.warn("AI composition repair unavailable; using visual fallback.",error instanceof Error?error.message:"Unknown provider error");
-      }
-      problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
-      if(problems.length){
-        validatedCode=buildVisualQualityFallback({prompt:project.prompt,theme,width,height,fps,durationInFrames});
-        problems=[...validateComposition(validatedCode),...assessVisualComposition(validatedCode,project.prompt)];
-      }
+    let problems=validateTechnicalComposition(validatedCode);
+
+    // Creative assessment is non-blocking - log suggestions only
+    const creativeNotes=assessVisualComposition(validatedCode,project.prompt);
+    if(creativeNotes.length){
+      console.info("Composition creative notes (non-blocking):",creativeNotes);
     }
-    if(problems.length)throw new Error("Composition type validation failed: "+problems.join("; "));
+
+    const MAX_REPAIR_ATTEMPTS=2;
+    let repairAttempt=0;
+    while(problems.length>0&&repairAttempt<MAX_REPAIR_ATTEMPTS){
+      repairAttempt++;
+      console.warn(`Generated composition has technical errors (repair attempt ${repairAttempt}/${MAX_REPAIR_ATTEMPTS}):`,problems);
+      try{
+        const repairSkill=await loadRemotionCompositionSkill();
+        const hyperframesGuidance=await loadHyperframesMotionGuidance();
+        validatedCode=await generateText(
+          remotionCompositionSystemPrompt(repairSkill,hyperframesGuidance),
+          JSON.stringify({
+            originalPrompt:project.prompt,
+            refinedProductionPrompt:refinedPrompt,
+            theme,
+            width,
+            height,
+            fps,
+            durationInFrames,
+            previousSource:validatedCode,
+            validationErrors:problems,
+            instruction:"Repair the composition to fix the exact compiler and syntax errors. Ensure JSX expressions have a single parent element (e.g. wrap adjacent elements in <AbsoluteFill> or <>...</>) and all TypeScript/TSX syntax and Remotion exports are valid. Return complete TSX source only."
+          })
+        );
+      }catch(error){
+        console.warn(`AI composition repair attempt ${repairAttempt} failed:`,error instanceof Error?error.message:"Unknown provider error");
+        break;
+      }
+      problems=validateTechnicalComposition(validatedCode);
+    }
+
+    if(problems.length>0){
+      console.warn("AI composition repair exhausted; using safe visual fallback.",problems);
+      validatedCode=buildVisualQualityFallback({prompt:project.prompt,theme,width,height,fps,durationInFrames});
+      problems=validateTechnicalComposition(validatedCode);
+    }
+
+    if(problems.length>0)throw new Error("Composition type validation failed: "+problems.join("; "));
     const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode});
     if(completed.error)throw completed.error;
     if(!completed.data)throw new NonRetriableError("Generation request was superseded before save; exiting without retry.");
