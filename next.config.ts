@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       "./node_modules/lucide-react/**/*",
     ],
     "/api/inngest": [
+      "./node_modules/@remotion/studio/**/*",
+      "./node_modules/@remotion/studio-shared/**/*",
+      "./node_modules/@remotion/studio-protocol/**/*",
       "./node_modules/lucide-react/**/*",
       "./node_modules/react/**/*",
       "./node_modules/react-dom/**/*",

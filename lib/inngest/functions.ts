@@ -6,6 +6,8 @@ import { briefSchema, themeSchema, generateText } from "@/lib/ai/generate";
 import { loadRemotionCompositionSkill, remotionCompositionSystemPrompt, storyboardSystemPrompt } from "@/lib/remotion/skill";
 import { renderProjectOnLambda } from "@/lib/remotion/lambda";
 import { resolveMotionTheme } from "@/lib/motion-theme";
+import { NonRetriableError } from "inngest";
+import { generationIdentity } from "./job-identity";
 
 function normalizeSceneTimings(brief:ReturnType<typeof briefSchema.parse>,durationInFrames:number){
   const alreadyValid=brief.scenes[0].startFrame===0
@@ -176,7 +178,10 @@ export const generateMotion = inngest.createFunction({
   concurrency:{limit:1,key:"event.data.projectId"},
   idempotency:"event.data.runId",
   onFailure:async({event})=>{
-    const {projectId,runId}=event.data.event.data;
+    const identity=generationIdentity(event.data.event?.data);
+    if(!identity)return;
+    const {projectId,runId}=identity;
+    if(event.data.error.message.includes("superseded"))return;
     const failure=event.data.error.message.includes("credits")
       ? "The AI provider could not complete this request. Your reserved credits were returned."
       : "Generation could not finish. Your reserved credits were returned; retry when ready.";
@@ -184,15 +189,19 @@ export const generateMotion = inngest.createFunction({
     if(result.error)throw result.error;
   },
 },{event:"video/generation.requested"},async({event,step})=>{
-  const projectId=String(event.data.projectId),runId=String(event.data.runId);
+  const identity=generationIdentity(event.data);
+  if(!identity)throw new NonRetriableError("Invalid generation event: projectId and runId are required UUIDs.");
+  const {projectId,runId}=identity;
   async function update(status:string,progress:number,extra:Record<string,unknown>={}){
-    const result=await workerDatabase().from("project_generations").update({status,progress,updated_at:new Date().toISOString(),...extra}).eq("project_id",projectId).eq("run_id",runId).select("project_id").single();
+    const result=await workerDatabase().from("project_generations").update({status,progress,updated_at:new Date().toISOString(),...extra}).eq("project_id",projectId).eq("run_id",runId).not("status","in","(completed,failed)").select("project_id").maybeSingle();
     if(result.error)throw result.error;
+    if(!result.data)throw new NonRetriableError("Generation request was superseded; exiting without retry.");
   }
   const project=await step.run("load-project",async()=>{
     const db=workerDatabase();
-    const job=await db.from("project_generations").select("run_id,request_prompt").eq("project_id",projectId).single();
-    if(job.error||job.data.run_id!==runId)throw new Error("Generation request is no longer current.");
+    const job=await db.from("project_generations").select("run_id,request_prompt,status").eq("project_id",projectId).maybeSingle();
+    if(job.error)throw job.error;
+    if(!job.data||job.data.run_id!==runId||["completed","failed"].includes(job.data.status))throw new NonRetriableError("Generation request was superseded; exiting without retry.");
     await update("loading_project",5);
     const result=await db.from("projects").select("prompt,seconds,ratio,art,theme_config").eq("id",projectId).single();
     if(result.error)throw result.error;
@@ -265,7 +274,8 @@ export const generateMotion = inngest.createFunction({
     }
     if(problems.length)throw new Error("Composition type validation failed: "+problems.join("; "));
     const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode});
-    if(completed.error||!completed.data)throw completed.error||new Error("Generation request is no longer current.");
+    if(completed.error)throw completed.error;
+    if(!completed.data)throw new NonRetriableError("Generation request was superseded before save; exiting without retry.");
   });
   return {projectId,runId,status:"completed"};
 });
@@ -276,10 +286,10 @@ export const exportProjectVideo = inngest.createFunction({
   concurrency: { limit: 2, key: "event.data.projectId" },
   idempotency: "event.data.exportId",
   onFailure: async ({ event }) => {
-    const { exportId } = event.data.event.data;
+    const { exportId, runId } = event.data.event.data;
     await workerDatabase().from("project_video_exports").update({
       status: "failed", error: "The Lambda render failed. Click Export MP4 to start a new attempt.", updated_at: new Date().toISOString(),
-    }).eq("id", exportId).in("status", ["queued", "rendering"]);
+    }).eq("id", exportId).eq("run_id", runId).in("status", ["queued", "rendering"]);
   },
 }, { event: "video/export.requested" }, async ({ event, step }) => {
   const exportId = String(event.data.exportId), projectId = String(event.data.projectId);
@@ -291,9 +301,10 @@ export const exportProjectVideo = inngest.createFunction({
       db.from("project_video_versions").select("run_id,composition_code,theme").eq("project_id", projectId).eq("run_id", String(event.data.runId)).single(),
     ]);
     if (exportRow.error || projectResult.error || versionResult.error) throw exportRow.error || projectResult.error || versionResult.error;
-    if (exportRow.data.owner_id !== event.data.ownerId || projectResult.data.user_id !== event.data.ownerId || exportRow.data.run_id !== versionResult.data.run_id) {
-      throw new Error("Export ownership or saved version did not match.");
+    if (exportRow.data.owner_id !== event.data.ownerId || projectResult.data.user_id !== event.data.ownerId) {
+      throw new NonRetriableError("Export ownership did not match.");
     }
+    if(exportRow.data.run_id!==versionResult.data.run_id)throw new NonRetriableError("Export request was superseded; exiting without retry.");
     if (exportRow.data.status === "completed") return { alreadyComplete: true as const };
     if (!["queued", "rendering"].includes(exportRow.data.status)) throw new Error("This export request is no longer active.");
     const started = await db.from("project_video_exports").update({ status: "rendering", progress: 1, error: null, updated_at: new Date().toISOString() }).eq("id", exportId).select("id").single();
