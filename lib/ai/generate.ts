@@ -12,7 +12,9 @@ export const briefSchema=z.object({
   scenes:z.array(z.object({description:z.string().max(2500),headline:z.string().max(100).optional(),startFrame:z.number().int().nonnegative(),endFrame:z.number().int().positive()})).min(1).max(12)
 });
 export async function generateText(system:string,prompt:string,json=false) {
-  const router=process.env.OPENROUTER_API_KEY, openai=process.env.OPENAI_API_KEY;
+  const openai=process.env.OPENAI_API_KEY?.trim();
+  // Prefer direct OpenAI when configured, even if an older OpenRouter key remains.
+  const router=openai?undefined:process.env.OPENROUTER_API_KEY?.trim();
   if(!router&&!openai)throw new Error("Configure OPENROUTER_API_KEY or OPENAI_API_KEY.");
   // The free preview model frequently truncates full Remotion TSX compositions.
   // Use a paid model with a larger output budget unless explicitly overridden.
@@ -24,7 +26,8 @@ export async function generateText(system:string,prompt:string,json=false) {
     body:JSON.stringify({model,messages:[{role:"system",content:system},{role:"user",content:prompt}],max_tokens:json?7000:24000,...(json?{response_format:{type:"json_object"}}:{})}),
     signal:AbortSignal.timeout(240000)
   });
-  if(response.status===402)throw new NonRetriableError("OpenRouter credits or key spending limit cannot cover this request.");
+  if(response.status===401)throw new NonRetriableError("The configured AI provider API key was rejected. Check the server environment variables.");
+  if(response.status===402)throw new NonRetriableError("AI provider credits or key spending limit cannot cover this request.");
   if(!response.ok)throw new Error("AI provider request failed (HTTP "+response.status+").");
   const data=await response.json();
   if(data.error)throw new Error("AI provider could not complete the generation.");
