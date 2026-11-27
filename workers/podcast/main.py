@@ -32,7 +32,7 @@ image = (modal.Image.from_registry(
     .run_commands(["mkdir -p /usr/share/fonts/truetype/custom",
                    "wget -O /usr/share/fonts/truetype/custom/Anton-Regular.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf",
                    "fc-cache -f -v"])
-    .apt_install("git").run_commands("git clone https://github.com/Junhua-Liao/LR-ASD /asd && cd /asd && git checkout 1b6dcd2d8fc2895683de6508ec6294ec47d388ca")
+    .add_local_dir(str(pathlib.Path(__file__).parent / "vendor" / "LR-ASD"), remote_path="/asd")
     .run_commands(
         "cd /asd && gdown 1KafnHz7ccT-3IyddBsL5yi2xGtxAKypt -O model/faceDetector/s3fd/sfd_face.pth"
         " && python Columbia_test.py --help && test -s weight/finetuning_TalkSet.model"
