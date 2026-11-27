@@ -32,7 +32,11 @@ image = (modal.Image.from_registry(
     .run_commands(["mkdir -p /usr/share/fonts/truetype/custom",
                    "wget -O /usr/share/fonts/truetype/custom/Anton-Regular.ttf https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf",
                    "fc-cache -f -v"])
-    .add_local_dir(str(pathlib.Path(__file__).parent / "vendor" / "LR-ASD"), remote_path="/asd")
+    .add_local_dir(
+        str(pathlib.Path(__file__).parent / "vendor" / "LR-ASD"),
+        remote_path="/asd",
+        copy=True,
+    )
     .run_commands(
         "cd /asd && gdown 1KafnHz7ccT-3IyddBsL5yi2xGtxAKypt -O model/faceDetector/s3fd/sfd_face.pth"
         " && python Columbia_test.py --help && test -s weight/finetuning_TalkSet.model"
@@ -242,7 +246,8 @@ def create_subtitles_with_ffmpeg(transcript_segments: list, clip_start: float, c
     new_style.alignment = 2
     new_style.marginl = 50
     new_style.marginr = 50
-    new_style.marginv = 50
+    # Keep captions above the lower UI-safe area in vertical video.
+    new_style.marginv = 480
     new_style.spacing = 0.0
 
     subs.styles[style_name] = new_style
