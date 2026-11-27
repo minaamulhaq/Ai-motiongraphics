@@ -14,7 +14,7 @@ export function GenerationPanel({id,canEdit,hasPlayback,onGenerationChange,onPla
     async function poll(){
       try{
         const r=await fetch("/api/projects/"+id+"/generate",{cache:"no-store",signal:abort.signal});
-        const data=await r.json();if(!r.ok)throw new Error(data.error);
+        const data=await r.json();if(!r.ok)throw new Error(data.error);setError("");
         setJob(data.generation);onGenerationChange?.(data.generation);onPlaybackChange?.(data.playback??null);
         if(canEdit&&!data.generation&&!submitted){
           submitted=true;
@@ -25,9 +25,9 @@ export function GenerationPanel({id,canEdit,hasPlayback,onGenerationChange,onPla
         if(!["completed","failed"].includes(data.generation?.status))timer=setTimeout(poll,2500);
       }catch(e){if(!abort.signal.aborted)setError(e instanceof Error?e.message:"Generation is unavailable.")}
     }
-    setError("");void poll();
+    void poll();
     return ()=>{abort.abort();clearTimeout(timer)};
-  },[id,canEdit,refresh,onGenerationChange,onPlaybackChange]);
+  },[id,canEdit,refresh,onGenerationChange,onPlaybackChange,refetchUser]);
   useEffect(()=>{
     const onRefresh=(event:Event)=>{
       const detail=(event as CustomEvent<{id:string;generation?:Generation}>).detail;
@@ -57,7 +57,7 @@ export function GenerationPanel({id,canEdit,hasPlayback,onGenerationChange,onPla
       const done=i<current,active=!failed&&i===current;
       return <li key={s.status} className={done?"complete":active?"current":""}>{done?<Check size={14}/>:active?<Loader2 size={14} className="spin"/>:<Circle size={14}/>}<span>{s.label}</span>{active&&<small>In progress</small>}</li>
     })}</ol>
-    <p className="render-status" role="status">{failed&&hasPlayback?"The latest attempt failed. Your last completed video is still available above.":failed&&job?.credit_cost===0?"This project was saved, but its first video never completed. There is no previous video to play, and this attempt charged no credits.":failed?job.error:job?.status==="queued"?"Your request is queued.":!job?"Preparing your request…":generationStages.find(s=>s.status===job.status)?.label}</p>
+    <p className="render-status" role="status">{failed&&job?.error?`${job.error}${hasPlayback?" Your last completed video is still available above.":""}`:failed&&hasPlayback?"The latest attempt failed. Your last completed video is still available above.":failed&&job?.credit_cost===0?"This project was saved, but its first video never completed. There is no previous video to play, and this attempt charged no credits.":failed?"The video could not be created. Please retry or choose another motion model.":job?.status==="queued"?"Your request is queued.":!job?"Preparing your request…":generationStages.find(s=>s.status===job.status)?.label}</p>
     {error&&<p role="alert" className="error">{error}</p>}
     {(error||failed||queued)&&canEdit&&<button className="start" disabled={busy} onClick={retry}><RefreshCw size={14}/>{queued?"Resume queued job":"Retry generation"}</button>}
   </section>

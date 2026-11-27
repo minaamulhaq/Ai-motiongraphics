@@ -19,7 +19,7 @@ export async function GET() {
     const user = await currentUser();
     const supabase = await getSupabase();
 
-    const library = supabase.from("projects").select("id,title,prompt,art,seconds,ratio,hue,theme_config,user_id,collection_position,shared,created_at");
+    const library = supabase.from("projects").select("id,title,prompt,art,seconds,ratio,hue,theme_config,user_id,collection_position,shared,created_at,video_engine");
 
     const [list, reel] = await Promise.all([
       user
@@ -44,7 +44,7 @@ export async function GET() {
     const versions = projectIds.length
       ? await supabase
           .from("project_video_versions")
-          .select("project_id,brief,theme,request_prompt,completed_at")
+          .select("project_id,brief,theme,request_prompt,completed_at,composition_code,video_engine")
           .in("project_id", projectIds)
           .order("completed_at", { ascending: false })
       : { data: [], error: null };
@@ -62,6 +62,8 @@ export async function GET() {
           theme: version.theme,
           request_prompt: version.request_prompt,
           completed_at: version.completed_at,
+          composition_code: version.composition_code,
+          video_engine: version.video_engine as "remotion"|"hyperframes",
         });
       }
     }
@@ -117,6 +119,8 @@ export async function POST(req: NextRequest) {
       if (!user) return fail("Please sign in to save a project.", 401);
 
       const prompt = typeof data.prompt === "string" ? data.prompt.trim() : "";
+      const videoEngine = data.video_engine === "hyperframes" ? "hyperframes" : data.video_engine === "remotion" || data.video_engine == null ? "remotion" : null;
+      if (!videoEngine) return fail("Choose Motion-1 or Motion-2.");
       if (!prompt || prompt.length > 2000 || !ratios.includes(data.ratio) || !durations.includes(data.seconds)) {
         return fail("Check your prompt and settings (max 2000 characters).");
       }
@@ -134,6 +138,7 @@ export async function POST(req: NextRequest) {
           hue: style.hue,
           ratio: data.ratio,
           seconds: data.seconds,
+          video_engine: videoEngine,
           shared: data.shared === true,
         })
         .select()

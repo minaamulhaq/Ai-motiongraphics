@@ -1,6 +1,7 @@
 "use client";
 
 import { Player } from "@remotion/player";
+import {useEffect,useState} from "react";
 import type { Project } from "@/lib/studio";
 import { resolveMotionTheme } from "@/lib/motion-theme";
 import { ProjectMotionVideo, type ProjectMotionVideoProps, type RuntimeScene } from "./project-motion-video";
@@ -43,34 +44,32 @@ export function ProjectThumbnail({ project }: { project: Project }) {
   const compositionWidth = rw > rh ? 1920 : 1080;
   const compositionHeight = Math.round(compositionWidth * rh / rw);
 
-  if (!project.playback) {
+  if (!project.playback?.composition_code || project.playback.video_engine === "hyperframes") {
     return <div className="poster-art" style={{ backgroundImage: `url(/art/${project.art}.webp)`, filter: `hue-rotate(${project.hue}deg)` }} />;
   }
 
-  const prompt = project.playback.request_prompt || project.prompt;
-  const inputProps: ProjectMotionVideoProps = {
-    title: project.title,
-    prompt,
-    art: project.art,
-    theme: resolveMotionTheme(project.theme_config ?? project.playback.theme, project.art),
-    scenes: runtimeScenes(project.playback.brief, durationInFrames, prompt),
-    searchDemo: searchDemo(prompt, project.playback.brief),
-  };
-
   return (
     <div className="project-first-frame" aria-hidden="true">
-      <Player
-        component={ProjectMotionVideo}
-        inputProps={inputProps}
-        durationInFrames={durationInFrames}
-        compositionWidth={compositionWidth}
-        compositionHeight={compositionHeight}
-        fps={fps}
-        initialFrame={0}
-        controls={false}
-        clickToPlay={false}
-        style={{ width: "100%", height: "100%", backgroundColor: inputProps.theme.colors.background }}
-      />
+      <SavedCompositionThumbnail project={project} fps={fps} durationInFrames={durationInFrames} compositionWidth={compositionWidth} compositionHeight={compositionHeight}/>
     </div>
   );
+}
+
+function SavedCompositionThumbnail({project,fps,durationInFrames,compositionWidth,compositionHeight}:{project:Project;fps:number;durationInFrames:number;compositionWidth:number;compositionHeight:number}) {
+  const [html,setHtml]=useState("");
+  useEffect(()=>{
+    const abort=new AbortController();
+    fetch(`/api/projects/${project.id}/preview?thumbnail=1`,{signal:abort.signal,cache:"no-store"})
+      .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||"Thumbnail unavailable");if(typeof data.html==="string")setHtml(data.html)})
+      .catch(()=>{});
+    return()=>abort.abort();
+  },[project.id]);
+
+  if(html)return <iframe title={`${project.title} first frame`} srcDoc={html} sandbox="allow-scripts" tabIndex={-1} aria-hidden="true"/>;
+  if(project.playback?.brief){
+    const prompt=project.playback.request_prompt||project.prompt;
+    const props:ProjectMotionVideoProps={title:project.title,prompt,art:project.art,theme:resolveMotionTheme(project.theme_config??project.playback.theme,project.art),scenes:runtimeScenes(project.playback.brief,durationInFrames,prompt),searchDemo:searchDemo(prompt,project.playback.brief)};
+    return <Player component={ProjectMotionVideo} inputProps={props} durationInFrames={durationInFrames} compositionWidth={compositionWidth} compositionHeight={compositionHeight} fps={fps} initialFrame={0} controls={false} clickToPlay={false} style={{width:"100%",height:"100%",backgroundColor:props.theme.colors.background}}/>;
+  }
+  return null;
 }

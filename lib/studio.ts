@@ -12,6 +12,8 @@ export type Project = {
   ratio: string; creator: string; hue: number; theme_config?:unknown; created_at?:string;
   playback?:{
     brief:unknown; theme:unknown; request_prompt:string|null; completed_at:string;
+    composition_code?:string|null;
+    video_engine?:"remotion"|"hyperframes";
   };
 };
 export function motionStyle(prompt: string) {

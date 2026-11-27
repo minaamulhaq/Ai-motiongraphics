@@ -8,6 +8,9 @@ import { readCompositionConfig, renderProjectOnLambda } from "@/lib/remotion/lam
 import { resolveMotionTheme } from "@/lib/motion-theme";
 import { NonRetriableError } from "inngest";
 import { generationIdentity } from "./job-identity";
+import { embedHyperframesGsap, hyperframesSystemPrompt, normalizeHyperframesDuration } from "@/lib/hyperframes/composition";
+import { renderHyperframesComposition } from "@/lib/hyperframes/render";
+import { reviewCompositionAgainstBrief } from "@/lib/ai/review-composition";
 
 export function validateTechnicalComposition(code: string): string[] {
   const issues = [...validateComposition(code)];
@@ -103,9 +106,12 @@ export const generateMotion = inngest.createFunction({
     if(!identity)return;
     const {projectId,runId}=identity;
     if(event.data.error.message.includes("superseded"))return;
-    const failure=event.data.error.message.includes("credits")
-      ? "The AI provider could not complete this request. Your reserved credits were returned."
-      : "Generation could not finish. Your reserved credits were returned; retry when ready.";
+    const message=event.data.error.message;
+    const failure=message.includes("COMPOSITION_REVIEW_FAILED")
+      ? "We couldn't match the animation to your brief after two corrections. Try a shorter, more specific prompt. Your reserved credits were returned."
+      : message.includes("credits")
+        ? "The AI provider could not complete this request. Your reserved credits were returned."
+        : "Generation could not finish. Your reserved credits were returned; retry when ready.";
     const result=await workerDatabase().rpc("fail_project_generation",{target:projectId,target_run:runId,failure_message:failure});
     if(result.error)throw result.error;
   },
@@ -120,13 +126,13 @@ export const generateMotion = inngest.createFunction({
   }
   const project=await step.run("load-project",async()=>{
     const db=workerDatabase();
-    const job=await db.from("project_generations").select("run_id,request_prompt,status").eq("project_id",projectId).maybeSingle();
+    const job=await db.from("project_generations").select("run_id,request_prompt,status,video_engine").eq("project_id",projectId).maybeSingle();
     if(job.error)throw job.error;
     if(!job.data||job.data.run_id!==runId||["completed","failed"].includes(job.data.status))throw new NonRetriableError("Generation request was superseded; exiting without retry.");
     await update("loading_project",5);
     const result=await db.from("projects").select("prompt,seconds,ratio,art,theme_config").eq("id",projectId).single();
     if(result.error)throw result.error;
-    return {...result.data,prompt:job.data.request_prompt||result.data.prompt};
+    return {...result.data,prompt:job.data.request_prompt||result.data.prompt,videoEngine:job.data.video_engine as "remotion"|"hyperframes"};
   });
   const fps=30,durationInFrames=project.seconds*fps;
   const [rw,rh]=project.ratio.split(":").map(Number);
@@ -198,8 +204,14 @@ Ensure scenes are strictly contiguous (each scene's startFrame equals the previo
     await update("generating_prompt",60,{brief:{refinedPrompt:productionPrompt,storyboard:scenePlan}});
     return {refinedPrompt:productionPrompt,theme:result,plan:scenePlan};
   });
-  const code=await step.run("generate-remotion-composition",async()=>{
+  const code=await step.run(`generate-${project.videoEngine}-composition`,async()=>{
     await update("generating_composition",55);
+    if(project.videoEngine==="hyperframes"){
+      return generateText(hyperframesSystemPrompt(),JSON.stringify({
+        originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,storyboardPlan:plan.scenes,
+        theme,width,height,fps,durationSeconds:project.seconds,
+      }));
+    }
     const skill=await loadRemotionCompositionSkill();
     const hyperframesMotionGuidance=await loadHyperframesMotionGuidance();
     try{
@@ -223,54 +235,52 @@ Ensure scenes are strictly contiguous (each scene's startFrame equals the previo
     }
   });
   await step.run("validate-and-save",async()=>{
-    await update("validating",90);
-    let validatedCode=code;
+    if(project.videoEngine!=="hyperframes")await update("validating",90);
+    let validatedCode=project.videoEngine==="hyperframes"?await embedHyperframesGsap(normalizeHyperframesDuration(code,project.seconds)):code;
+    if(project.videoEngine==="hyperframes"){
+      // HyperFrames previews should not wait on technical or AI quality gates.
+      // Normalize the selected runtime, embed the bundled GSAP, and save immediately.
+      const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode,source_engine:"hyperframes"});
+      if(completed.error)throw completed.error;
+      if(!completed.data)throw new NonRetriableError("Generation request was superseded before save; exiting without retry.");
+      return;
+    }
     let problems=validateTechnicalComposition(validatedCode);
 
-    // Creative assessment is non-blocking - log suggestions only
+    // Keep deterministic source-level checks alongside the model review.
     const creativeNotes=assessVisualComposition(validatedCode,project.prompt);
-    if(creativeNotes.length){
-      console.info("Composition creative notes (non-blocking):",creativeNotes);
-    }
+    if(creativeNotes.length)console.info("Composition creative notes:",creativeNotes);
 
-    const MAX_REPAIR_ATTEMPTS=2;
-    let repairAttempt=0;
-    while(problems.length>0&&repairAttempt<MAX_REPAIR_ATTEMPTS){
-      repairAttempt++;
-      console.warn(`Generated composition has technical errors (repair attempt ${repairAttempt}/${MAX_REPAIR_ATTEMPTS}):`,problems);
-      try{
+    let repairAttempts=0;
+    while(true){
+      problems=validateTechnicalComposition(validatedCode);
+      if(problems.length){
+        if(repairAttempts>=2)throw new NonRetriableError("COMPOSITION_REVIEW_FAILED: Remotion technical validation still fails after two corrections: "+problems.join("; "));
+        repairAttempts++;
+        console.warn(`Remotion technical repair (${repairAttempts}/2):`,problems);
         const repairSkill=await loadRemotionCompositionSkill();
         const hyperframesGuidance=await loadHyperframesMotionGuidance();
-        validatedCode=await generateText(
-          remotionCompositionSystemPrompt(repairSkill,hyperframesGuidance),
-          JSON.stringify({
-            originalPrompt:project.prompt,
-            refinedProductionPrompt:refinedPrompt,
-            theme,
-            width,
-            height,
-            fps,
-            durationInFrames,
-            previousSource:validatedCode,
-            validationErrors:problems,
-            instruction:"Repair the composition to fix the exact compiler and syntax errors. Ensure JSX expressions have a single parent element (e.g. wrap adjacent elements in <AbsoluteFill> or <>...</>) and all TypeScript/TSX syntax and Remotion exports are valid. Return complete TSX source only."
-          })
-        );
-      }catch(error){
-        console.warn(`AI composition repair attempt ${repairAttempt} failed:`,error instanceof Error?error.message:"Unknown provider error");
-        break;
+        validatedCode=await generateText(remotionCompositionSystemPrompt(repairSkill,hyperframesGuidance),JSON.stringify({
+          originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,theme,width,height,fps,durationInFrames,
+          previousSource:validatedCode,validationErrors:problems,
+          instruction:"Repair the exact compiler/syntax errors and preserve all requested visual content. Return complete TSX source only.",
+        }));
+        continue;
       }
-      problems=validateTechnicalComposition(validatedCode);
+      const quality=await reviewCompositionAgainstBrief({brief:project.prompt,storyboard:plan.scenes,source:validatedCode,engine:"remotion"});
+      if(quality.passed)break;
+      if(repairAttempts>=2)throw new NonRetriableError("COMPOSITION_REVIEW_FAILED: Remotion visual review still finds gaps after two corrections: "+quality.findings.map(item=>item.problem).join("; "));
+      repairAttempts++;
+      console.warn(`Remotion quality repair (${repairAttempts}/2):`,quality.findings);
+      const repairSkill=await loadRemotionCompositionSkill();
+      const hyperframesGuidance=await loadHyperframesMotionGuidance();
+      validatedCode=await generateText(remotionCompositionSystemPrompt(repairSkill,hyperframesGuidance),JSON.stringify({
+        originalPrompt:project.prompt,refinedProductionPrompt:refinedPrompt,storyboardPlan:plan.scenes,theme,width,height,fps,durationInFrames,
+        previousSource:validatedCode,qualityFindings:quality.findings,
+        instruction:"Revise the complete composition to satisfy every quality finding while preserving valid Remotion syntax and exact requested copy. Do not replace requested subject matter with generic motion graphics.",
+      }));
     }
-
-    if(problems.length>0){
-      console.warn("AI composition repair exhausted; using safe visual fallback.",problems);
-      validatedCode=buildVisualQualityFallback({prompt:project.prompt,theme,width,height,fps,durationInFrames});
-      problems=validateTechnicalComposition(validatedCode);
-    }
-
-    if(problems.length>0)throw new Error("Composition type validation failed: "+problems.join("; "));
-    const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode});
+    const completed=await workerDatabase().rpc("complete_project_generation",{target:projectId,target_run:runId,source_code:validatedCode,source_engine:"remotion"});
     if(completed.error)throw completed.error;
     if(!completed.data)throw new NonRetriableError("Generation request was superseded before save; exiting without retry.");
   });
@@ -286,7 +296,7 @@ export const exportProjectVideo = inngest.createFunction({
     const { exportId, runId } = event.data.event.data;
     console.error("Project export failed", { exportId, runId, error: event.data.error });
     await workerDatabase().from("project_video_exports").update({
-      status: "failed", error: "The Lambda render failed. Click Export MP4 to start a new attempt.", updated_at: new Date().toISOString(),
+    status: "failed", error: "The video render failed. Click Export MP4 to start a new attempt.", updated_at: new Date().toISOString(),
     }).eq("id", exportId).eq("run_id", runId).in("status", ["queued", "rendering"]);
   },
 }, { event: "video/export.requested" }, async ({ event, step }) => {
@@ -295,8 +305,8 @@ export const exportProjectVideo = inngest.createFunction({
     const db = workerDatabase();
     const [exportRow, projectResult, versionResult] = await Promise.all([
       db.from("project_video_exports").select("id,owner_id,status,run_id").eq("id", exportId).single(),
-      db.from("projects").select("id,user_id,title,art,theme_config").eq("id", projectId).single(),
-      db.from("project_video_versions").select("run_id,composition_code,theme").eq("project_id", projectId).eq("run_id", String(event.data.runId)).single(),
+      db.from("projects").select("id,user_id,title,art,theme_config,seconds").eq("id", projectId).single(),
+      db.from("project_video_versions").select("run_id,composition_code,theme,video_engine").eq("project_id", projectId).eq("run_id", String(event.data.runId)).single(),
     ]);
     if (exportRow.error || projectResult.error || versionResult.error) throw exportRow.error || projectResult.error || versionResult.error;
     if (exportRow.data.owner_id !== event.data.ownerId || projectResult.data.user_id !== event.data.ownerId) {
@@ -310,14 +320,35 @@ export const exportProjectVideo = inngest.createFunction({
     return {
       alreadyComplete: false as const,
       source: versionResult.data.composition_code,
+      videoEngine: versionResult.data.video_engine as "remotion" | "hyperframes",
+      ownerId: exportRow.data.owner_id,
       title: projectResult.data.title,
       theme: resolveMotionTheme(versionResult.data.theme ?? projectResult.data.theme_config, projectResult.data.art),
+      durationSeconds: projectResult.data.seconds,
     };
   });
   if (loaded.alreadyComplete) return { exportId, status: "completed", reused: true };
 
-  const result = await step.run("render-mp4-on-aws-lambda", async () => {
+  const result = await step.run(`render-mp4-${loaded.videoEngine}`, async () => {
     const db = workerDatabase();
+    if (loaded.videoEngine === "hyperframes") {
+      await db.from("project_video_exports").update({ progress: 3, updated_at: new Date().toISOString() }).eq("id", exportId);
+      const output = await renderHyperframesComposition({
+        html: normalizeHyperframesDuration(loaded.source, loaded.durationSeconds), fps: 30,
+        onProgress: async (progress) => {
+          await db.from("project_video_exports").update({ progress, updated_at: new Date().toISOString() }).eq("id", exportId).lt("progress", progress);
+        },
+      });
+      const outputKey = `${loaded.ownerId}/${projectId}/${String(event.data.runId)}.mp4`;
+      const uploaded = await db.storage.from("hyperframes-videos").upload(outputKey, output, { contentType: "video/mp4", upsert: true });
+      if (uploaded.error) throw uploaded.error;
+      const completed = await db.from("project_video_exports").update({
+        status: "completed", progress: 100, output_bucket: "supabase:hyperframes-videos", output_key: outputKey,
+        error: null, updated_at: new Date().toISOString(),
+      }).eq("id", exportId).select("id").single();
+      if (completed.error) throw completed.error;
+      return { renderId: null, outputBucket: "supabase:hyperframes-videos" };
+    }
     const rendered = await renderProjectOnLambda({
       source: loaded.source, projectId, title: loaded.title, theme: loaded.theme,
       onInit: async (renderId, bucketName) => {

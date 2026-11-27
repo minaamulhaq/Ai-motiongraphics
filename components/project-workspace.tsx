@@ -96,7 +96,7 @@ export default function ProjectWorkspace({id}:{id:string}){
         if(!statusResponse.ok)throw new Error(status.error||"Could not check the export status.");
         exportJob=status.export;downloadUrl=status.downloadUrl;
       }
-      if(exportJob?.status==="failed")throw new Error(exportJob.error||"The Lambda render failed. Click Export MP4 to retry.");
+      if(exportJob?.status==="failed")throw new Error(exportJob.error||"The video render failed. Click approve and render to try again.");
       if(!downloadUrl)throw new Error("The export is still rendering. Please check again in a moment.");
       const link=document.createElement("a");link.href=downloadUrl;link.download=project.title.replace(/[^a-z0-9-_]+/gi,"-")||"aivid-video";link.rel="noreferrer";link.click();
     }catch(e){setExportError(e instanceof Error?e.message:"Could not export this video.")}
@@ -108,11 +108,7 @@ export default function ProjectWorkspace({id}:{id:string}){
   const generationComplete=generation?.status==="completed";
   const playableGeneration=generationComplete?generation:playback;
   return <div className="studio workspace">
-    <header className="workspace-header">
-      <div className="workspace-brand"><Link href="/" className="back-link" aria-label="Back to studio"><ArrowLeft size={17}/></Link><Link href="/" className="brand"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span>AI Vid<span className="brand-period">.</span></Link><span className="header-divider"/><span className="project-title">{project?.title??"Project workspace"}</span></div>
-      <div className="workspace-account">{project&&<button className="start export-project" disabled={!playableGeneration?.composition_code||exporting} title={playableGeneration?.composition_code?"Render and download MP4 with Remotion Lambda":"Export is available when generation finishes"} onClick={()=>void exportVideo()}>{exporting?<Loader2 size={14} className="spin"/>:<Download size={14}/>} {exporting?"Rendering…":"Export MP4"}</button>}<Link href="/" className="text-btn">My projects <ArrowUpRight size={14}/></Link>{isSignedIn?<AccountMenu compact/>:<button className="start" onClick={()=>openSignIn()}>Sign in</button>}</div>
-    </header>
-    {loading?<div className="workspace-state" role="status"><Loader2 className="spin"/><p>Loading your workspace…</p></div>:loadError||!project?<div className="workspace-state"><p role="alert">{loadError||"Project unavailable."}</p><Link className="start" href="/">Return to studio</Link></div>:
+    {loading?<div className="workspace-state" role="status"><Loader2 className="spin"/><p>Loading your workspace…</p></div>:loadError||!project?<div className="workspace-state"><p role="alert">{loadError||"Project unavailable."}</p><Link className="start" href="/dashboard">Return to studio</Link></div>:
     <div className="workspace-body">
       <aside className="workspace-sidebar" aria-label="Project tools">
         <Tabs value={tab} onValueChange={value=>{setTab(String(value));setError("")}} className="workspace-tabs">
@@ -152,7 +148,7 @@ export default function ProjectWorkspace({id}:{id:string}){
           </TabsContent>
         </Tabs>
       </aside>
-      <main className="workspace-main"><div className="preview-heading"><div><div className="eyebrow"><span className="bar"/>THE CANVAS</div><h1>From prompt to <em>picture.</em></h1></div><span className={"render-badge "+(playableGeneration?"ready":"")}><span/>{playableGeneration?"Ready to play":generation?.status==="failed"?"Generation failed":"Generating"}</span></div>
+      <main className="workspace-main"><div className="preview-heading"><div><div className="eyebrow"><span className="bar"/>THE CANVAS</div><h1>From prompt to <em>picture.</em></h1></div><div className="preview-actions"><span className={"render-badge "+(playableGeneration?"ready":"")}><span/>{playableGeneration?"Ready to play":generation?.status==="failed"?"Generation failed":"Generating"}</span>{project&&<button className="start export-project" disabled={!playableGeneration?.composition_code||exporting} title={playableGeneration?.composition_code?"Approve and render the current video with its selected method":"Rendering is available when generation finishes"} onClick={()=>void exportVideo()}>{exporting?<Loader2 size={14} className="spin"/>:<Download size={14}/>} {exporting?"Rendering…":"Approve & render"}</button>}</div></div>
         <div className="video-stage">{exportError&&<p className="error" role="alert">{exportError}</p>}<div className="video-frame" style={{aspectRatio:project.ratio.replace(":","/"),maxWidth:["9:16","10:19"].includes(project.ratio)?"300px":"100%"}}>
           {playableGeneration?<ProjectVideoPlayer project={project} generation={playableGeneration}/>:<img src={"/art/"+project.art+".webp"} alt={project.prompt} style={{filter:"hue-rotate("+project.hue+"deg)"}}/>}
         </div><GenerationPanel id={id} canEdit={canEdit} hasPlayback={!!playableGeneration} onGenerationChange={setGeneration} onPlaybackChange={setPlayback}/></div>

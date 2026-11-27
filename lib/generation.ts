@@ -3,13 +3,13 @@ export const generationStages = [
   {status:"loading_project",label:"Loading project"},
   {status:"generating_theme",label:"Setting the visual theme"},
   {status:"generating_prompt",label:"Refining your video prompt"},
-  {status:"generating_composition",label:"Writing the Remotion composition"},
+  {status:"generating_composition",label:"Building your motion scene"},
   {status:"validating",label:"Validating the composition"},
 ] as const;
 export type Generation = {
   project_id:string; run_id:string; attempt:number; status:string;
   progress:number; error:string|null; brief:unknown; theme:unknown;
   composition_code:string|null; updated_at:string; request_type:"legacy"|"new_video"|"modification";
-  credit_cost:number; request_prompt:string|null;
+  credit_cost:number; request_prompt:string|null; video_engine:"remotion"|"hyperframes";
 };
 

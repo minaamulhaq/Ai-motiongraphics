@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { PricingTable, UserAvatar, UserProfile, useUser } from "@clerk/nextjs";
-import { ArrowLeft, ArrowUpRight, CheckCircle2, Coins, CreditCard, Loader2, LockKeyhole, Sparkles, UserRound } from "lucide-react";
-import { AccountMenu } from "@/components/account-menu";
+import { ArrowUpRight, CheckCircle2, Coins, CreditCard, Loader2, LockKeyhole, Sparkles, UserRound } from "lucide-react";
 
 type Activity = {
   id: string;
@@ -23,10 +21,6 @@ const sectionCopy: Record<SettingsSection, { eyebrow: string; title: string; des
   security: { eyebrow: "ACCOUNT PROTECTION", title: "Security", description: "Control your password, active devices, verification methods, and account access." },
   billing: { eyebrow: "CREDITS & SUBSCRIPTION", title: "Billing", description: "Review generation credits, choose a plan, and inspect recent credit activity." },
 };
-
-function Brand() {
-  return <Link href="/" className="brand"><span className="brand-mark" aria-hidden="true"><i /><i /><i /></span>AI Vid<span className="brand-period">.</span></Link>;
-}
 
 function ClerkAccountPanel({ section }: { section: "profile" | "security" }) {
   return (
@@ -59,7 +53,7 @@ function BillingPanel({ data }: { data: SettingsData | null }) {
       <section className="billing-block">
         <div className="billing-block-heading"><div><span>SUBSCRIPTION</span><h3>Choose a credit plan.</h3></div>{clerkBillingEnabled && <span className="billing-secure"><LockKeyhole size={13} /> Secured by Clerk</span>}</div>
         {clerkBillingEnabled ? (
-          <div className="pricing-shell"><PricingTable for="user" newSubscriptionRedirectUrl="/settings" /></div>
+          <div className="pricing-shell"><PricingTable for="user" newSubscriptionRedirectUrl="/dashboard/settings" /></div>
         ) : (
           <div className="billing-unavailable">
             <span><CreditCard size={19} /></span>
@@ -92,6 +86,9 @@ export function SettingsDashboard() {
   const copy = sectionCopy[section];
 
   useEffect(() => {
+    const syncSection = () => { if (window.location.hash === "#billing") setSection("billing"); };
+    syncSection();
+    window.addEventListener("hashchange", syncSection);
     const controller = new AbortController();
     fetch("/api/settings", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -102,16 +99,11 @@ export function SettingsDashboard() {
       .catch((reason) => {
         if (reason.name !== "AbortError") setError(reason instanceof Error ? reason.message : "Could not load settings.");
       });
-    return () => controller.abort();
+    return () => { controller.abort(); window.removeEventListener("hashchange", syncSection); };
   }, []);
 
   return (
     <main className="settings-page settings-single-route">
-      <header className="settings-main-header">
-        <div className="settings-header-left"><Brand /><span className="settings-header-divider" /><span>Account settings</span></div>
-        <div className="settings-header-actions"><Link href="/" className="account-back"><ArrowLeft size={15} /> Studio</Link><AccountMenu compact /></div>
-      </header>
-
       {error && <p className="settings-error" role="alert">{error}</p>}
 
       <div className="settings-dashboard-shell">
@@ -129,7 +121,7 @@ export function SettingsDashboard() {
         </aside>
 
         <section id={section} className="settings-content" aria-live="polite">
-          {section === "billing" && <header className="settings-content-header"><span>{copy.eyebrow}</span><h2>{copy.title}</h2><p>{copy.description}</p></header>}
+          <header className="settings-content-header"><span>{copy.eyebrow}</span><h2>{copy.title}</h2><p>{copy.description}</p></header>
           <div className="settings-content-body">
             {section === "billing" ? <BillingPanel data={data} /> : <ClerkAccountPanel section={section} />}
           </div>

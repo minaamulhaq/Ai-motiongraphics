@@ -16,19 +16,22 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{id:string}>}
     }
 
     const runId = req.nextUrl.searchParams.get("runId");
-    let versionQuery = db.from("project_video_versions").select("composition_code,theme").eq("project_id",id);
+    let versionQuery = db.from("project_video_versions").select("composition_code,theme,brief,request_prompt,video_engine").eq("project_id",id);
     if (runId) {
       versionQuery = versionQuery.eq("run_id", runId);
     } else {
       versionQuery = versionQuery.order("created_at", { ascending: false }).limit(1);
     }
     const version = await versionQuery.maybeSingle();
-    if(!version.data?.composition_code) {
+    if(!version.data?.composition_code || version.data.video_engine === "hyperframes") {
       return NextResponse.json({error:"Saved video unavailable."},{status:404});
     }
 
     const source=cleanCompositionSource(version.data.composition_code);
     const theme=resolveMotionTheme(version.data.theme??project.data.theme_config,project.data.art);
+    const thumbnail=req.nextUrl.searchParams.get("thumbnail")==="1";
+    const brief=version.data.brief as {durationInFrames?:number}|null;
+    const frameCount=Math.max(1,Number(brief?.durationInFrames)||150);
 
     const result=await build({
       stdin:{
@@ -76,10 +79,11 @@ createRoot(document.getElementById('root')).render(
       inputProps: { ...(videoConfig?.defaultProps || {}), theme: ${JSON.stringify(theme)} },
       compositionWidth: videoConfig?.width || 1920,
       compositionHeight: videoConfig?.height || 1080,
-      durationInFrames: videoConfig?.durationInFrames || 150,
+      durationInFrames: videoConfig?.durationInFrames || ${thumbnail?frameCount:150},
       fps: videoConfig?.fps || 30,
-      controls: true,
-      clickToPlay: true,
+      initialFrame: ${thumbnail?0:undefined},
+      controls: ${thumbnail?false:true},
+      clickToPlay: ${thumbnail?false:true},
       errorFallback: ({ error }) => React.createElement("div", {
         role: "alert",
         style: {

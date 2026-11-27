@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Local studio accounts and projects
 .studio-data/
+__pycache__/
+*.pyc
+.venv-whisper/

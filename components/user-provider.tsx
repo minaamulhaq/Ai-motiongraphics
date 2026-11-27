@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 
 export interface StudioUser {
@@ -32,22 +32,29 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [dbUser, setDbUser] = useState<StudioUser | null>(null);
   const [isNewUser, setIsNewUser] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const syncedUserId = useRef<string | null>(null);
+  const inFlight = useRef<Promise<void> | null>(null);
 
   const syncAndFetchUser = useCallback(async () => {
     if (!isSignedIn || !userId) {
       setDbUser(null);
       setIsNewUser(false);
       setIsLoading(false);
+      syncedUserId.current = null;
       return;
     }
 
+    if (syncedUserId.current === userId) return;
+    if (inFlight.current) return inFlight.current;
+
     setIsLoading(true);
-    try {
+    const request = (async () => { try {
       const res = await fetch("/api/auth/sync-user", { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         setDbUser(data.user);
         setIsNewUser(Boolean(data.isNewUser));
+        syncedUserId.current = userId;
       } else {
         const detail = await res.json().catch(() => null);
         console.error("Failed to sync user with Supabase", detail?.error || res.status);
@@ -56,7 +63,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       console.error("Error in UserProvider sync:", err);
     } finally {
       setIsLoading(false);
-    }
+      inFlight.current = null;
+    } })();
+    inFlight.current = request;
+    return request;
   }, [isSignedIn, userId]);
 
   useEffect(() => {

@@ -1,0 +1,19 @@
+tqdm
+opencv-python
+ffmpegcv
+numpy
+python_speech_features
+scipy
+scenedetect==0.6.7.1
+scikit-learn
+gdown
+pandas
+transformers
+accelerate
+datasets
+openai
+pysubs2
+boto3
+fastapi[standard]
+whisperx
+# Torch, TorchAudio, and TorchVision are pinned together in main.py for CUDA compatibility.

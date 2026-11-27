@@ -188,11 +188,7 @@
 .activity-empty { margin-top: 24px; min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted-foreground) }
 .settings-error { color: var(--destructive); margin-bottom: 18px }
 
-.settings-single-route { max-width: 1500px; margin: 0 auto; padding: 0 44px 64px }
-.settings-main-header { min-height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border) }
-.settings-header-left,.settings-header-actions { display: flex; align-items: center; gap: 18px }
-.settings-header-divider { height: 24px; width: 1px; background: var(--border) }
-.settings-header-left > span:last-child { color: var(--muted-foreground); font-size: 13px }
+.settings-single-route { min-height: 0; max-width: none; margin: 0; padding: 24px 44px 48px; background: transparent }
 .settings-dashboard-shell { min-height: 660px; display: grid; grid-template-columns: 280px minmax(0,1fr); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--card); box-shadow: 0 22px 70px #0003 }
 .settings-sidebar { display: flex; flex-direction: column; padding: 24px 16px; border-right: 1px solid var(--border); background: color-mix(in srgb,var(--background) 55%,var(--card)) }
 .settings-person { display: flex; align-items: center; gap: 12px; padding: 4px 8px 22px; border-bottom: 1px solid var(--border) }
@@ -244,7 +240,7 @@
 .account-loading { min-height: 300px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted-foreground) }
 
 @media (max-width: 760px) {
-  .settings-single-route { padding-inline: 16px }
+  .settings-single-route { padding: 18px 16px 32px }
   .settings-dashboard-shell { grid-template-columns: 1fr }
   .settings-sidebar { border-right: 0; border-bottom: 1px solid var(--border); padding: 16px }
   .settings-sidebar nav { grid-template-columns: repeat(3,minmax(0,1fr)); padding-top: 12px }

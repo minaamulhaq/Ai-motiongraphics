@@ -60,6 +60,9 @@ export default function StudioHome() {
   }
 
   function handleGetStarted() {
+    // Clerk queues openSignIn() while it initializes. If the session resolves
+    // as signed in first, Clerk reports cannot_render_single_session_enabled.
+    if (!isLoaded) return;
     if (!isSignedIn) {
       openSignIn();
     } else {
@@ -69,6 +72,7 @@ export default function StudioHome() {
 
   async function generate(e: FormEvent) {
     e.preventDefault();
+    if (!isLoaded) return;
     if (!isSignedIn) {
       openSignIn();
       return;
@@ -132,7 +136,7 @@ export default function StudioHome() {
           </a>
           <nav aria-label="Main navigation">
             <a className="active" href="#home">Home</a>
-            <button onClick={() => isSignedIn ? router.push("/settings#plans") : openSignIn()}>Pricing</button>
+            <button onClick={() => { if (!isLoaded) return; if (isSignedIn) router.push("/settings#plans"); else openSignIn(); }}>Pricing</button>
             <button onClick={() => open("contact")}>Contact Us</button>
           </nav>
           <div className="flex items-center gap-3 justify-self-end">
@@ -143,7 +147,7 @@ export default function StudioHome() {
               </div>
             )}
             {isSignedIn ? <AccountMenu /> : (
-              <button className="start" onClick={handleGetStarted}>
+              <button className="start" onClick={handleGetStarted} disabled={!isLoaded}>
                 Get Started <ArrowDownRight size={15} />
               </button>
             )}
@@ -157,7 +161,7 @@ export default function StudioHome() {
             <div className="eyebrow"><span className="signal" />AI VIDEO GENERATOR</div>
             <h1 id="hero-title">Ideas into<br /><em>motion.</em></h1>
             <p>Turn a simple prompt into a moving visual. Shape the scene, set the pace, and make it yours.</p>
-            <button className="start" onClick={handleGetStarted}>Get Started <ArrowDownRight size={16} /></button>
+            <button className="start" onClick={handleGetStarted} disabled={!isLoaded}>Get Started <ArrowDownRight size={16} /></button>
           </div>
           <button
             className="hero-art"
@@ -237,7 +241,7 @@ export default function StudioHome() {
                 </Select>
               </div>
 
-              <button className="primary flex items-center gap-2" type="submit" disabled={busy}>
+              <button className="primary flex items-center gap-2" type="submit" disabled={busy || !isLoaded}>
                 {busy ? (
                   <>Saving <Loader2 size={15} className="animate-spin" /></>
                 ) : (

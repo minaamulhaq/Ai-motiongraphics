@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
     "@remotion/bundler",
     "@remotion/lambda",
     "@remotion/lambda-client",
+    "@hyperframes/producer",
+    "@hyperframes/core",
+    "@hyperframes/engine",
+    "@hyperframes/parsers",
+    "@hyperframes/lint",
+    "puppeteer",
+    "puppeteer-core",
     "esbuild",
   ],
   outputFileTracingIncludes: {
@@ -42,6 +49,10 @@ const nextConfig: NextConfig = {
       // Include the installed runtime dependency closure so both export targets
       // and their transitive modules are present without copying all node_modules.
       ...remotionRuntimeTraceIncludes,
+      "./node_modules/@hyperframes/**/*",
+      "./node_modules/gsap/**/*",
+      "./node_modules/puppeteer/**/*",
+      "./node_modules/puppeteer-core/**/*",
       "./.agents/skills/remotion-best-practices/**/*.md",
       "./.agents/skills/hyperframes/SKILL.md",
       "./.agents/skills/hyperframes/references/motion.md",

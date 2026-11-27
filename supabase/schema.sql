@@ -71,6 +71,7 @@ create table if not exists public.projects (
   art public.artwork not null,
   seconds smallint not null check(seconds in (5, 10, 20)),
   ratio text not null check(ratio in ('10:19', '16:9', '19:6')),
+  video_engine text not null default 'remotion' check (video_engine in ('remotion', 'hyperframes')),
   hue smallint not null default 0 check(hue between -180 and 180),
   shared boolean not null default false,
   created_at timestamptz not null default now(),

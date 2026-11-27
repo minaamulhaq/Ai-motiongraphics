@@ -118,6 +118,7 @@ export type Database = {
           run_id: string
           status: string
           theme: Json | null
+          video_engine: string
           updated_at: string
         }
         Insert: {
@@ -133,6 +134,7 @@ export type Database = {
           run_id?: string
           status?: string
           theme?: Json | null
+          video_engine?: string
           updated_at?: string
         }
         Update: {
@@ -148,6 +150,7 @@ export type Database = {
           run_id?: string
           status?: string
           theme?: Json | null
+          video_engine?: string
           updated_at?: string
         }
         Relationships: [
@@ -169,6 +172,7 @@ export type Database = {
           composition_code: string
           request_prompt: string | null
           completed_at: string
+          video_engine: string
         }
         Insert: {
           run_id: string
@@ -178,6 +182,7 @@ export type Database = {
           composition_code: string
           request_prompt?: string | null
           completed_at?: string
+          video_engine?: string
         }
         Update: {
           run_id?: string
@@ -187,6 +192,7 @@ export type Database = {
           composition_code?: string
           request_prompt?: string | null
           completed_at?: string
+          video_engine?: string
         }
         Relationships: [{
           foreignKeyName: "project_video_versions_project_id_fkey"
@@ -340,6 +346,7 @@ export type Database = {
           shared: boolean
           title: string
           theme_config: Json | null
+          video_engine: string
           user_id: string | null
         }
         Insert: {
@@ -355,6 +362,7 @@ export type Database = {
           shared?: boolean
           title: string
           theme_config?: Json | null
+          video_engine?: string
           user_id?: string | null
         }
         Update: {
@@ -370,6 +378,7 @@ export type Database = {
           shared?: boolean
           title?: string
           theme_config?: Json | null
+          video_engine?: string
           user_id?: string | null
         }
         Relationships: []
@@ -417,7 +426,7 @@ export type Database = {
         Returns: number
       }
       complete_project_generation: {
-        Args: { source_code: string; target: string; target_run: string }
+        Args: { source_code: string; source_engine: string; target: string; target_run: string }
         Returns: boolean
       }
       fail_project_generation: {
@@ -426,6 +435,7 @@ export type Database = {
       }
       queue_project_generation: {
         Args: {
+          actor_id?: string
           requested_prompt?: string
           retry_requested?: boolean
           target: string
@@ -443,6 +453,7 @@ export type Database = {
           run_id: string
           status: string
           theme: Json | null
+          video_engine: string
           updated_at: string
         }[]
         SetofOptions: {

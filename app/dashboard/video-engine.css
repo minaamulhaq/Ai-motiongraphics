@@ -1,0 +1,4 @@
+.engine-choice{display:grid;gap:6px;min-width:160px;color:#bdb8c0;font-size:11px;font-weight:600}
+.engine-choice select{min-height:42px;padding:0 12px;border:1px solid #49382e;border-radius:9px;background:#151519;color:#f4f0f4;font:inherit;font-size:12px}
+.engine-choice:focus-within select{outline:2px solid #ff823f;outline-offset:2px}
+@media(max-width:850px){.engine-choice{flex:1;min-width:150px}}
